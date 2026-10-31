@@ -2,4 +2,5 @@ compile_commands.json
 .git/*
 build/*
 bin/*
+dist/*
 .cache/*

@@ -2,38 +2,55 @@
 #define _TERMIFY_CORE_MIXER_HPP
 
 #include "Common.hpp"
-#include "Defines.hpp"
 #include "FFmpegDecoder.hpp"
-
-using AtomicBool = std::atomic<bool>;
 
 namespace termify::core {
 
 class Mixer {
 public:
-  Mixer(PlaybackContext *pCtx, RingBufferContext *rCtx,
-        VisualizationContext *vCtx, MixerResponseContext *mrCtx);
+  Mixer(PlaybackContext *playback, RingBufferContext *ringBuffer,
+        VisualizationContext *visualization, MixerResponseContext *responses,
+        SongQueue *queue);
+  ~Mixer();
 
-  void Play(const string &song);
-  void ToggleRepeat(bool toggle);
+  Mixer(const Mixer &) = delete;
+  Mixer &operator=(const Mixer &) = delete;
+
+  bool AddToQueue(string song);
+  void ToggleRepeat(bool enabled);
   void Pause();
   void Resume();
-  void Stop(bool force = false);
+  void NextSong();
+  void Stop(bool force = false, bool clearQueue = true);
+  void ClearQueue();
+  void SetVolume(int percent);
+  void Shutdown();
+  void PublishMessage(const string &message, bool isError = false);
 
-  inline const string &TrackName() const { return _trackName; }
-  inline bool IsRepeatOn() const { return _repeatSong; }
-  inline AtomicContext *GetCtxRef() { return &_ctx; }
+  string TrackName() const;
+  int Volume() const { return _ctx.playbackCtx->volumePercent.load(); }
+  bool IsRepeatOn() const { return _repeatSong.load(); }
+  AtomicContext *GetCtxRef() { return &_ctx; }
 
 private:
-  void dispatchResponse(const string &msg, bool isErr = false);
+  void schedulerLoop();
+  void prefetchLoop();
+  void startNext();
+  static void cleanupPrepared(const QueuedSong &song);
+  void dispatchResponse(const string &message, bool isError = false);
 
-private:
-  std::unique_ptr<FFmpegDecoder> _decoder;
-  AtomicContext _ctx;
-
-  bool _repeatSong = false;
-  int64 _lastResId = 1;
+  AtomicContext _ctx{};
+  atomic_bool _repeatSong{false};
+  mutable std::mutex _trackMtx;
   string _trackName;
+  std::mutex _schedulerMtx;
+  condition_variable _schedulerCv;
+  std::mutex _prefetchMtx;
+  condition_variable _prefetchCv;
+  atomic_bool _prefetchCancel{false};
+  std::mutex _controlMtx;
+  std::thread _schedulerThread;
+  std::thread _prefetchThread;
 };
 
 } // namespace termify::core
