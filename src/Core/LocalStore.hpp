@@ -105,6 +105,8 @@ public:
                                       std::int64_t historyId);
   AddTrackResult AddSourceToPlaylist(std::int64_t playlistId,
                                      const HistoryEntry &track);
+  AddTrackResult AddVerifiedSourceToPlaylist(std::int64_t playlistId,
+                                             const HistoryEntry &track);
   bool RemovePlaylistTrack(std::int64_t playlistId, std::int64_t entryId);
   bool MovePlaylistTrack(std::int64_t playlistId, std::int64_t entryId,
                          int direction);

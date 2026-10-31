@@ -64,11 +64,12 @@ terminal or system in a broken state.
 - **v0.3 — Library foundation (released):** persistent history, bounded audio
   caching, navigable tabs, and the verified bundled-downloader fix. Further
   cancellation and error-recovery hardening remains part of the v1 gates.
-- **v0.4 — Player controls and search:** add clickable ASCII playback controls,
-  then a keyboard- and mouse-navigable YouTube search-results tab that removes
-  the guesswork from typed song searches while retaining CLI queueing.
+- **v0.4 — Player controls and search (released):** clickable ASCII playback
+  controls, plus a keyboard- and mouse-navigable YouTube search-results tab
+  with Play Now, Play Next, and playlist-picker actions. Ten-result searches
+  use a bounded 30-minute session cache while retaining CLI queueing.
 - **v0.5 — Daily usability:** add seeking, shortcuts, persistent settings,
-  playlists, and favorites.
+  favorites, and playlist import/export.
 - **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
   add verified update checks and rollback, and test packages on clean supported
   distributions.

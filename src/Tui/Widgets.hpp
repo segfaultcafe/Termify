@@ -108,6 +108,22 @@ private:
   bool _hovered{false};
 };
 
+class Knob : public Widget {
+public:
+  explicit Knob(std::string id);
+  bool Focusable() const override { return true; }
+  void SetValue(int value);
+  void SetPointer(std::optional<Point> point) override;
+  bool Handle(const Event &event) override;
+  void Render(Canvas &canvas) const override;
+  int TakeAdjustment();
+
+private:
+  int _value{100};
+  int _adjustment{0};
+  bool _hovered{false};
+};
+
 } // namespace termify::tui
 
 #endif // TERMIFY_TUI_WIDGETS_HPP

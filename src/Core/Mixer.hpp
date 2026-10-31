@@ -17,6 +17,7 @@ public:
   Mixer &operator=(const Mixer &) = delete;
 
   bool AddToQueue(string song);
+  bool PlayNow(string song);
   bool StartPlaylist(vector<string> songs, string name, bool shuffle,
                      bool loop);
   void ToggleRepeat(bool enabled);
@@ -40,7 +41,7 @@ private:
   void prefetchLoop();
   void startNext();
   bool queuePlaylistCycle();
-  bool enqueue(string song, bool next = false);
+  bool prioritizeNext(string song, bool playNow);
   void clearQueue(bool cancelPlaylist);
   static void cleanupPrepared(const QueuedSong &song);
   void dispatchResponse(const string &message, bool isError = false);

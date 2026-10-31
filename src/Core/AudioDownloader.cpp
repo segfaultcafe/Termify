@@ -12,6 +12,31 @@
 namespace termify::core {
 
 namespace {
+constexpr auto SEARCH_CACHE_TTL = std::chrono::minutes(30);
+constexpr std::size_t SEARCH_CACHE_LIMIT = 20;
+
+string cleanField(string value) {
+  value.erase(std::remove_if(value.begin(), value.end(),
+                             [](unsigned char character) {
+                               return character < 32 || character == 127;
+                             }),
+              value.end());
+  return value == "NA" ? string{} : value;
+}
+
+vector<string> splitSearchLine(const string &line) {
+  vector<string> fields;
+  std::size_t start = 0;
+  while (start <= line.size()) {
+    const auto end = line.find('\x1f', start);
+    fields.push_back(line.substr(start, end - start));
+    if (end == string::npos)
+      break;
+    start = end + 1;
+  }
+  return fields;
+}
+
 string readDownloadError(const std::filesystem::path &path) {
   std::ifstream stream(path);
   string line;
@@ -132,6 +157,157 @@ PreparedAudio YtDlpManager::PrepareAudio(const string &query,
 string YtDlpManager::DownloadAudioToFile(const string &query,
                                          const atomic_bool *cancel) {
   return download(query, cancel).path;
+}
+
+string YtDlpManager::normalizeSearchQuery(const string &query) {
+  string normalized;
+  bool pendingSpace = false;
+  for (const unsigned char character : query) {
+    if (std::isspace(character)) {
+      pendingSpace = !normalized.empty();
+      continue;
+    }
+    if (pendingSpace) {
+      normalized.push_back(' ');
+      pendingSpace = false;
+    }
+    normalized.push_back(static_cast<char>(std::tolower(character)));
+  }
+  return normalized;
+}
+
+SearchResponse YtDlpManager::SearchYouTube(const string &query,
+                                           std::size_t limit) {
+  if (!_initialized)
+    throw std::runtime_error(
+        "yt-dlp is unavailable; reinstall Termify or set TERMIFY_YTDLP");
+  const string normalized = normalizeSearchQuery(query);
+  if (normalized.empty())
+    throw std::runtime_error("Enter a song, artist, or album to search");
+  limit = std::clamp<std::size_t>(limit, 1, 25);
+  const string key = normalized + "\n" + std::to_string(limit);
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard lock(_searchCacheMtx);
+    for (auto iterator = _searchCache.begin(); iterator != _searchCache.end();) {
+      if (now - iterator->second.createdAt >= SEARCH_CACHE_TTL)
+        iterator = _searchCache.erase(iterator);
+      else
+        ++iterator;
+    }
+    if (auto cached = _searchCache.find(key); cached != _searchCache.end()) {
+      cached->second.lastUsed = now;
+      return {cached->second.results, true};
+    }
+  }
+
+  static std::atomic_uint64_t sequence{0};
+  const string stem = "/tmp/termify-search-" + std::to_string(getpid()) + "-" +
+                      std::to_string(sequence.fetch_add(1));
+  const std::filesystem::path outputPath = stem + ".results";
+  const std::filesystem::path errorPath = stem + ".log";
+  const string source =
+      "ytsearch" + std::to_string(limit) + ":" + normalized;
+  const string outputFormat =
+      "%(id)s\x1f%(title)s\x1f%(channel)s\x1f%(duration)s\x1f%(webpage_url)s";
+
+  const pid_t child = fork();
+  if (child < 0)
+    throw std::runtime_error("Failed to start YouTube search");
+  if (child == 0) {
+    setpgid(0, 0);
+    const int output =
+        open(outputPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (output >= 0) {
+      dup2(output, STDOUT_FILENO);
+      close(output);
+    }
+    const int errorLog =
+        open(errorPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (errorLog >= 0) {
+      dup2(errorLog, STDERR_FILENO);
+      close(errorLog);
+    }
+    execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(),
+          "--quiet", "--no-warnings", "--no-playlist", "--flat-playlist",
+          "--skip-download", "--socket-timeout", "10", "--retries", "1",
+          "--extractor-retries", "1", "--print", outputFormat.c_str(),
+          source.c_str(), static_cast<char *>(nullptr));
+    _exit(127);
+  }
+  setpgid(child, child);
+  int status = 0;
+  bool timedOut = false;
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds(30);
+  while (true) {
+    const auto waited = waitpid(child, &status, WNOHANG);
+    if (waited == child)
+      break;
+    if (waited < 0 && errno != EINTR)
+      throw std::runtime_error("Failed while waiting for YouTube search");
+    if (std::chrono::steady_clock::now() >= deadline) {
+      timedOut = true;
+      kill(-child, SIGTERM);
+      waitpid(child, &status, 0);
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  vector<SearchResult> results;
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+    std::ifstream output(outputPath);
+    string line;
+    while (results.size() < limit && std::getline(output, line)) {
+      auto fields = splitSearchLine(line);
+      if (fields.size() != 5)
+        continue;
+      for (auto &field : fields)
+        field = cleanField(std::move(field));
+      string canonical = fields[4];
+      if (!canonical.starts_with("https://") &&
+          !canonical.starts_with("http://")) {
+        if (fields[0].empty())
+          continue;
+        canonical = "https://www.youtube.com/watch?v=" + fields[0];
+      }
+      std::int64_t duration = 0;
+      try {
+        if (!fields[3].empty())
+          duration = std::max<std::int64_t>(0, std::stoll(fields[3]));
+      } catch (const std::exception &) {
+      }
+      if (!fields[1].empty())
+        results.push_back({fields[0], std::move(canonical), fields[1],
+                           fields[2], duration});
+    }
+  }
+  const string detail =
+      results.empty()
+          ? (timedOut ? "the provider did not respond within 30 seconds"
+                      : readDownloadError(errorPath))
+          : "";
+  std::error_code error;
+  std::filesystem::remove(outputPath, error);
+  std::filesystem::remove(errorPath, error);
+  if (results.empty())
+    throw std::runtime_error("YouTube search failed: " + detail);
+
+  {
+    std::lock_guard lock(_searchCacheMtx);
+    if (_searchCache.size() >= SEARCH_CACHE_LIMIT) {
+      const auto oldest = std::min_element(
+          _searchCache.begin(), _searchCache.end(), [](const auto &left,
+                                                       const auto &right) {
+            return left.second.lastUsed < right.second.lastUsed;
+          });
+      if (oldest != _searchCache.end())
+        _searchCache.erase(oldest);
+    }
+    _searchCache[key] = {results, now, now};
+  }
+  return {std::move(results), false};
 }
 
 YtDlpManager::DownloadedAudio

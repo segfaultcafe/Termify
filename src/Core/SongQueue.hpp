@@ -10,6 +10,12 @@ namespace termify::core {
 
 enum class QueueState { Pending, Downloading, Ready, Failed };
 enum class QueueOrigin { Manual, Playlist };
+enum class QueueNextResult { Added, Moved, AlreadyNext, Full, Invalid };
+
+struct QueueNextOutcome {
+  QueueNextResult result{QueueNextResult::Invalid};
+  std::optional<uint64> id;
+};
 
 struct QueuedSong {
   uint64 id{0};
@@ -29,6 +35,7 @@ public:
 
   std::optional<uint64> Push(string song);
   std::optional<uint64> PushNext(string song);
+  QueueNextOutcome PrioritizeNext(string song);
   bool PushPlaylistCycle(vector<string> songs);
   std::optional<QueuedSong> PopForPlayback();
   std::optional<QueuedSong> ClaimForPrefetch();

@@ -26,6 +26,8 @@ std::optional<string> commandHelp(const string &topic) {
     return "player — return to the player tab";
   case Command::PLAYLISTS:
     return "playlists — open the playlist manager";
+  case Command::SEARCH:
+    return "search — open YouTube search; enter a query in its search box";
   case Command::QUEUE:
     return "queue — show how many tracks are waiting";
   case Command::CLEAR:
@@ -73,6 +75,8 @@ Command StringToCommand(string command) {
     return Command::PLAYER;
   if (command == "playlists" || command == "playlist")
     return Command::PLAYLISTS;
+  if (command == "search")
+    return Command::SEARCH;
   if (command == "help" || command == ".h" || command == "?")
     return Command::HELP;
   return Command::UNKNOWN;
@@ -156,8 +160,8 @@ void Cli::Execute(const string &line) {
   case Command::HELP:
     if (args.size() == 1) {
       _mixer->PublishMessage("play  pause  resume  next  repeat  volume  "
-                             "history  playlists  player  stop  queue  clear  "
-                             "exit — use help <command>");
+                             "history  playlists  search  player  stop  queue  "
+                             "clear  exit — use help <command>");
       break;
     }
     if (args.size() != 2) {
@@ -175,13 +179,16 @@ void Cli::Execute(const string &line) {
   case Command::HISTORY:
   case Command::PLAYER:
   case Command::PLAYLISTS:
+  case Command::SEARCH:
     if (args.size() != 1) {
       _mixer->PublishMessage(
-          "Usage: history | playlists | player (no arguments)", true);
+          "Usage: history | playlists | search | player (no arguments)",
+          true);
     } else if (_switchTab) {
       const auto command = StringToCommand(args.front());
       _switchTab(command == Command::HISTORY     ? 1
                  : command == Command::PLAYLISTS ? 2
+                 : command == Command::SEARCH    ? 3
                                                  : 0);
     }
     break;

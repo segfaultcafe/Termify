@@ -15,27 +15,51 @@ QueuedSong makeQueuedSong(uint64 id, string song, QueueOrigin origin) {
 
 std::optional<uint64> SongQueue::Push(string song) {
   std::lock_guard lock(_queueMtx);
-  if (song.empty() || _queue.size() >= MAX_SONGS) {
+  if (song.empty()) {
     return std::nullopt;
   }
+  const auto duplicate =
+      std::find_if(_queue.begin(), _queue.end(), [&](const auto &queued) {
+        return queued.query == song ||
+               (!queued.source.empty() && queued.source == song);
+      });
+  if (duplicate != _queue.end())
+    return duplicate->id;
+  if (_queue.size() >= MAX_SONGS)
+    return std::nullopt;
   const uint64 id = _nextId++;
   _queue.push_back(makeQueuedSong(id, std::move(song), QueueOrigin::Manual));
   return id;
 }
 
 std::optional<uint64> SongQueue::PushNext(string song) {
+  return PrioritizeNext(std::move(song)).id;
+}
+
+QueueNextOutcome SongQueue::PrioritizeNext(string song) {
   std::lock_guard lock(_queueMtx);
-  if (song.empty() || _queue.size() >= MAX_SONGS) {
-    return std::nullopt;
+  if (song.empty())
+    return {QueueNextResult::Invalid, std::nullopt};
+  const auto matches = [&](const auto &queued) {
+    return queued.query == song ||
+           (!queued.source.empty() && queued.source == song);
+  };
+  if (!_queue.empty() && matches(_queue.front()))
+    return {QueueNextResult::AlreadyNext, _queue.front().id};
+  const auto duplicate = std::find_if(_queue.begin(), _queue.end(), matches);
+  if (duplicate != _queue.end()) {
+    QueuedSong queued = std::move(*duplicate);
+    queued.origin = QueueOrigin::Manual;
+    _queue.erase(duplicate);
+    const auto id = queued.id;
+    _queue.push_front(std::move(queued));
+    return {QueueNextResult::Moved, id};
   }
+  if (_queue.size() >= MAX_SONGS)
+    return {QueueNextResult::Full, std::nullopt};
   const uint64 id = _nextId++;
-  const auto firstPlaylist =
-      std::find_if(_queue.begin(), _queue.end(), [](const auto &item) {
-        return item.origin == QueueOrigin::Playlist;
-      });
-  _queue.insert(firstPlaylist,
-                makeQueuedSong(id, std::move(song), QueueOrigin::Manual));
-  return id;
+  _queue.push_front(makeQueuedSong(id, std::move(song), QueueOrigin::Manual));
+  return {QueueNextResult::Added, id};
 }
 
 bool SongQueue::PushPlaylistCycle(vector<string> songs) {

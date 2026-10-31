@@ -20,6 +20,7 @@ enum class Command {
   HISTORY,
   PLAYER,
   PLAYLISTS,
+  SEARCH,
   HELP,
   UNKNOWN
 };

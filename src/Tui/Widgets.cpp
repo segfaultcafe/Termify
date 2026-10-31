@@ -319,4 +319,59 @@ void Button::Render(Canvas &canvas) const {
 
 bool Button::TakeActivation() { return std::exchange(_activated, false); }
 
+Knob::Knob(std::string id) : Widget(std::move(id)) {}
+
+void Knob::SetValue(int value) { _value = std::clamp(value, 0, 100); }
+
+void Knob::SetPointer(std::optional<Point> point) {
+  _hovered = point.has_value();
+}
+
+bool Knob::Handle(const Event &event) {
+  if (const auto *mouse = std::get_if<MouseEvent>(&event)) {
+    if (mouse->action != MouseAction::Scroll)
+      return false;
+    if (mouse->button == MouseButton::WheelUp) {
+      _adjustment += 5;
+      return true;
+    }
+    if (mouse->button == MouseButton::WheelDown) {
+      _adjustment -= 5;
+      return true;
+    }
+    return false;
+  }
+  const auto *key = std::get_if<KeyEvent>(&event);
+  if (!key)
+    return false;
+  if (key->key == Key::ArrowUp || key->key == Key::ArrowRight ||
+      (key->key == Key::Character && key->text == "+")) {
+    _adjustment += 5;
+    return true;
+  }
+  if (key->key == Key::ArrowDown || key->key == Key::ArrowLeft ||
+      (key->key == Key::Character && key->text == "-")) {
+    _adjustment -= 5;
+    return true;
+  }
+  return false;
+}
+
+void Knob::Render(Canvas &canvas) const {
+  static constexpr const char *positions[] = {"◜", "◝", "◞", "◟"};
+  const auto &bounds = Bounds();
+  const bool active = Focused() || _hovered;
+  const Style style{_hovered ? Color::Yellow
+                             : (Focused() ? Color::Cyan : Color::Muted),
+                    active};
+  const auto phase = static_cast<std::size_t>(_value / 5) % 4;
+  const std::string label =
+      "[ VOL (" + std::string(positions[phase]) + ") " +
+      std::to_string(_value) + "% ]";
+  canvas.Text({bounds.column, bounds.row}, Canvas::Clip(label, bounds.width),
+              style, bounds.width);
+}
+
+int Knob::TakeAdjustment() { return std::exchange(_adjustment, 0); }
+
 } // namespace termify::tui

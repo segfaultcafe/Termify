@@ -15,33 +15,37 @@
 - Responsive, centered terminal interface with a live waveform
 - Title, artist, album, elapsed time, duration, and playback progress
 - Bounded 20-track queue with one-at-a-time background prefetching
-- Player, History, and Playlists tabs with keyboard and mouse controls
-- Clickable ASCII playback controls alongside the command prompt
-- Persistent playlists built from previously heard, cached online tracks
+- Player, History, Playlists, and YouTube Search tabs with keyboard and mouse
+  controls
+- Clickable playback controls, a track-repeat toggle, and a mouse-wheel
+  volume dial
+- Persistent playlists built from previously heard cached tracks or verified
+  YouTube Search results
 - Local play history and a bounded audio cache for replaying downloaded tracks
 - Pause, resume, skip, repeat, stop, and software volume control
 - Editable Unicode-aware input with cursor movement and deletion
 - Clean cancellation, temporary-file cleanup, and readable error messages
 - Self-contained online fetching: no Python or separate yt-dlp installation
 
-In development for **v0.4.0**: clickable Player controls are available first;
-a navigable YouTube Search tab is the next part of the release.
+**v0.4.0** adds clickable Player controls, a navigable YouTube Search tab with
+cached results and playlist actions, and symmetric Play Now and Play Next
+controls in History. Mouse-driven playback remains fully compatible with the
+command prompt.
 
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
 
-The latest packaged release is **v0.3.0**, which introduced persistent play
-history, a reusable audio cache, and keyboard- and mouse-friendly tabs.
+The latest packaged release is **v0.4.0**.
 
 ## Install the Linux release
 
-Download `termify-v0.3.0-linux-x86_64.tar.gz` and its checksum from the
-[v0.3.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.3.0).
+Download `termify-v0.4.0-linux-x86_64.tar.gz` and its checksum from the
+[v0.4.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.4.0).
 
 ```bash
-sha256sum -c termify-v0.3.0-linux-x86_64.tar.gz.sha256
-tar -xzf termify-v0.3.0-linux-x86_64.tar.gz
-cd termify-v0.3.0-linux-x86_64
+sha256sum -c termify-v0.4.0-linux-x86_64.tar.gz.sha256
+tar -xzf termify-v0.4.0-linux-x86_64.tar.gz
+cd termify-v0.4.0-linux-x86_64
 ./install.sh
 ```
 
@@ -94,7 +98,7 @@ sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The v0.3.0 prebuilt binary is produced on x86_64 Arch Linux and expects
+above. The v0.4.0 prebuilt binary is produced on x86_64 Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
 `libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
 `libasound.so.2`. It is tested on the build host, not certified across all
@@ -143,6 +147,7 @@ Then enter commands at the `termify ›` prompt:
 | `queue` | Show the number of queued tracks |
 | `history` / `player` | Switch to the History or Player tab |
 | `playlists` | Open the playlist manager |
+| `search` | Open the YouTube Search tab |
 | `clear` | Clear upcoming tracks |
 | `stop` | Stop playback and clear the queue |
 | `help` | Show the interactive command list |
@@ -166,8 +171,16 @@ next
   `|> PLAY` to `|| PAUSE` with playback state. Click one, or reach it with Tab
   and activate it with Enter or Space. The command prompt remains available
   for adding new songs.
+- The Player summary has a rotating **VOL** dial. Hover it and use the mouse
+  wheel in 5% steps, or focus it with Tab and use the arrow keys. The adjacent
+  **REPEAT ON/OFF** button toggles repeating only the current track.
 - The bordered file-style tabs sit above the player. A cyan dot marks the
   active view; hovering highlights a tab without taking focus from your typing.
+- The **QUIT** button in the player frame's title bar stops playback, clears
+  pending work, and closes Termify through the same clean shutdown path as the
+  `quit` command.
+- The frame title shows the build version, for example
+  `TERMIFY - terminal audio player - v0.4.0`.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
 - **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
   bar is focused; **Esc** returns to the command prompt.
@@ -175,13 +188,36 @@ next
   select a play. The mouse wheel scrolls and a click selects a row.
 - Press **Enter** on a selected history row to queue that song again. The
   `history` command opens the tab and focuses the list directly.
+- History mirrors the Search action row: select a previous play and choose
+  **PLAY NOW**, **PLAY NEXT**, or **ADD TO PLAYLIST**. The actions stay hidden
+  while History is empty. Double-clicking a History row performs **PLAY NOW**;
+  Enter keeps its **PLAY NEXT** behavior. Double-clicking a Search result also
+  performs **PLAY NOW**.
 - In History, choose **ADD TO PLAYLIST** (or press **A** while the list is
   focused) to add the selected cached play to the playlist last selected in
   the Playlists tab.
+- In Search, type a query into the dedicated search box and press Enter.
+  Termify returns up to 10 verified YouTube results and keeps recent searches
+  in a bounded, session-only cache for 30 minutes.
+- Results are numbered in the same order used by keyboard navigation. Select a
+  result and choose **PLAY NOW**, **PLAY NEXT**, or **ADD TO PLAYLIST**. Play
+  Now interrupts only the current track and then resumes the existing queue or
+  playlist. Play Next moves an existing duplicate forward instead of
+  enqueuing it twice. These actions stay hidden until a search returns at
+  least one selectable result.
+- **ADD TO PLAYLIST** opens a compact playlist picker. A `✓` marks playlists
+  that already contain the result and confirms additions without closing the
+  picker. Choose **NEW PLAYLIST** to name one inline; Termify creates it and
+  adds the pending result without leaving Search.
+- The Player's **ADD TO PLAYLIST** button opens the same picker for the current
+  track, including the inline **NEW PLAYLIST** flow. Cached/history eligibility
+  is still enforced before the current track can be saved.
 - The Playlists tab has separate playlist and track lists. Click a row or use
-  the arrow keys, then use Tab/Shift+Tab to reach **NEW**, **RENAME**,
-  **DELETE**, **ADD CURRENT**, **REMOVE**, **MOVE UP/DOWN**, **PLAY ALL**,
-  **SHUFFLE**, and **LOOP**. Enter or Space activates a focused button.
+  the arrow keys. **PLAYLIST COMMANDS** groups **NEW**, **RENAME**, and
+  **DELETE** with **PLAY SELECTED**, **SHUFFLE**, and **LOOP**; **TRACK
+  COMMANDS** groups **ADD CURRENT**, **REMOVE**, and **MOVE UP/DOWN**. Use
+  Tab/Shift+Tab to reach every action. Enter or Space activates a focused
+  button.
 - New and renamed playlist names are entered at the bottom prompt; Escape
   cancels the naming prompt. Deletion requires activating **DELETE** twice.
 - The interactive layout requires a terminal of at least **68 × 20** cells.
