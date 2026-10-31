@@ -15,10 +15,14 @@ if [[ ! -x "$PACKAGE_DIR/termify" || ! -x "$PACKAGE_DIR/yt-dlp" ]]; then
 fi
 
 install -Dm755 "$PACKAGE_DIR/termify" "$INSTALL_PREFIX/bin/termify"
-install -Dm755 "$PACKAGE_DIR/yt-dlp" \
-  "$INSTALL_PREFIX/lib/termify/yt-dlp"
+YTDLP_TARGET="$INSTALL_PREFIX/lib/termify/yt-dlp"
+if ! install -Dm755 "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"; then
+  YTDLP_TARGET="$INSTALL_PREFIX/bin/yt-dlp"
+  echo "Could not write to $INSTALL_PREFIX/lib; using $YTDLP_TARGET instead." >&2
+  install -Dm755 "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"
+fi
 
 echo "Installed Termify to $INSTALL_PREFIX/bin/termify"
-echo "Installed the embedded yt-dlp to $INSTALL_PREFIX/lib/termify/yt-dlp"
+echo "Installed the embedded yt-dlp to $YTDLP_TARGET"
 echo "Add $INSTALL_PREFIX/bin to PATH if it is not already present."
 echo "No Python or separate yt-dlp installation is required."

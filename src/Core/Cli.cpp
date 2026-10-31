@@ -1,8 +1,6 @@
 #include "Cli.hpp"
 
-#include <cerrno>
 #include <cctype>
-#include <unistd.h>
 
 namespace termify::core {
 
@@ -69,15 +67,8 @@ Command StringToCommand(string command) {
 
 Cli::Cli(std::unique_ptr<Mixer> &mixer) : _mixer(mixer) {}
 
-void Cli::Run() {
+void Cli::Execute(const string &line) {
   auto *ctx = _mixer->GetCtxRef();
-  const auto input = readLine();
-  if (!input) {
-    _mixer->Shutdown();
-    return;
-  }
-  const string line = *input;
-  redrawInput({}, 0);
 
   const auto args = parseArgs(line);
   if (args.empty()) {
@@ -172,143 +163,6 @@ void Cli::Run() {
   }
 }
 
-std::optional<string> Cli::readLine() {
-  if (!isatty(STDIN_FILENO)) {
-    redrawInput({}, 0);
-    string line;
-    if (!std::getline(std::cin, line)) {
-      return std::nullopt;
-    }
-    return line;
-  }
-
-  string line;
-  std::size_t cursor = 0;
-  redrawInput(line, cursor);
-
-  while (_mixer->GetCtxRef()->playbackCtx->gRunning.load()) {
-    unsigned char input[4]{};
-    const ssize_t count = read(STDIN_FILENO, input, 1);
-    if (count < 0) {
-      if (errno == EINTR) {
-        return std::nullopt;
-      }
-      continue;
-    }
-    if (count == 0 || input[0] == 4) {
-      return line.empty() ? std::nullopt : std::optional<string>(line);
-    }
-    if (input[0] == '\r' || input[0] == '\n') {
-      return line;
-    }
-
-    if (input[0] == 127 || input[0] == 8) {
-      if (cursor > 0) {
-        const std::size_t previous = previousCharacter(line, cursor);
-        line.erase(previous, cursor - previous);
-        cursor = previous;
-      }
-      redrawInput(line, cursor);
-      continue;
-    }
-
-    if (input[0] == 27) {
-      unsigned char sequence[3]{};
-      if (read(STDIN_FILENO, sequence, 2) == 2 && sequence[0] == '[') {
-        if (sequence[1] == 'D') {
-          cursor = previousCharacter(line, cursor);
-        } else if (sequence[1] == 'C') {
-          cursor = nextCharacter(line, cursor);
-        } else if (sequence[1] == 'H') {
-          cursor = 0;
-        } else if (sequence[1] == 'F') {
-          cursor = line.size();
-        } else if (sequence[1] == '3' &&
-                   read(STDIN_FILENO, sequence + 2, 1) == 1 &&
-                   sequence[2] == '~' && cursor < line.size()) {
-          line.erase(cursor, nextCharacter(line, cursor) - cursor);
-        }
-      }
-      redrawInput(line, cursor);
-      continue;
-    }
-
-    std::size_t byteCount = 1;
-    if ((input[0] & 0xE0) == 0xC0)
-      byteCount = 2;
-    else if ((input[0] & 0xF0) == 0xE0)
-      byteCount = 3;
-    else if ((input[0] & 0xF8) == 0xF0)
-      byteCount = 4;
-
-    for (std::size_t index = 1; index < byteCount; ++index) {
-      if (read(STDIN_FILENO, input + index, 1) != 1) {
-        byteCount = index;
-        break;
-      }
-    }
-
-    if (input[0] >= 32 || byteCount > 1) {
-      line.insert(cursor, reinterpret_cast<char *>(input), byteCount);
-      cursor += byteCount;
-      redrawInput(line, cursor);
-    }
-  }
-
-  return std::nullopt;
-}
-
-void Cli::redrawInput(const string &line, std::size_t cursor) const {
-  auto *visualization = _mixer->GetCtxRef()->visualizationCtx;
-  {
-    std::lock_guard inputLock(visualization->inputMtx);
-    visualization->inputLine = line;
-    visualization->inputCursor = cursor;
-  }
-
-  const int left = visualization->uiLeftColumn.load();
-  const int promptRow = visualization->uiTopRow.load() +
-                        VisualizationContext::PROMPT_ROW - 1;
-  std::lock_guard lock(visualization->coutMtx);
-  std::cout << "\033[" << promptRow
-            << ';' << left
-            << "H\033[2K\033[38;5;81mtermify\033[0m \u203a " << line;
-  const std::size_t charactersAfterCursor = characterCount(line, cursor);
-  if (charactersAfterCursor > 0) {
-    std::cout << "\033[" << charactersAfterCursor << 'D';
-  }
-  std::cout << std::flush;
-}
-
-std::size_t Cli::previousCharacter(const string &line, std::size_t cursor) {
-  if (cursor == 0) {
-    return 0;
-  }
-  --cursor;
-  while (cursor > 0 &&
-         (static_cast<unsigned char>(line[cursor]) & 0xC0) == 0x80) {
-    --cursor;
-  }
-  return cursor;
-}
-
-std::size_t Cli::nextCharacter(const string &line, std::size_t cursor) {
-  if (cursor >= line.size()) {
-    return line.size();
-  }
-  ++cursor;
-  while (cursor < line.size() &&
-         (static_cast<unsigned char>(line[cursor]) & 0xC0) == 0x80) {
-    ++cursor;
-  }
-  return cursor;
-}
-
-std::size_t Cli::characterCount(const string &line, std::size_t begin) {
-  return static_cast<std::size_t>(std::count_if(
-      line.begin() + static_cast<std::ptrdiff_t>(begin), line.end(),
-      [](unsigned char ch) { return (ch & 0xC0) != 0x80; }));
-}
 
 vector<string> Cli::parseArgs(const string &input) const {
   vector<string> result;

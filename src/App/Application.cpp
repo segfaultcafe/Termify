@@ -3,36 +3,18 @@
 #include "../Core/AudioDownloader.hpp"
 
 #include <cmath>
-#include <stdexcept>
 #include <sys/ioctl.h>
-#include <unistd.h>
 
 namespace termify::app {
 
 namespace {
-constexpr const char *RESET = "\033[0m";
-constexpr const char *BOLD = "\033[1m";
-constexpr const char *CYAN = "\033[38;5;81m";
-constexpr const char *MUTED = "\033[38;5;244m";
-constexpr const char *GREEN = "\033[38;5;84m";
-constexpr const char *YELLOW = "\033[38;5;220m";
-constexpr const char *RED = "\033[38;5;203m";
-
-string repeatGlyph(const string &glyph, int count) {
-  string output;
-  for (int index = 0; index < count; ++index) {
-    output += glyph;
-  }
-  return output;
-}
-
-string rule(int width, const string &label = {}) {
-  if (label.empty()) {
-    return "├" + repeatGlyph("─", width - 2);
-  }
-  const int fill = std::max(0, width - static_cast<int>(label.size()) - 5);
-  return "├─ " + label + " " + repeatGlyph("─", fill);
-}
+constexpr tui::Style CYAN{tui::Color::Cyan};
+constexpr tui::Style CYAN_BOLD{tui::Color::Cyan, true};
+constexpr tui::Style MUTED{tui::Color::Muted};
+constexpr tui::Style GREEN{tui::Color::Green};
+constexpr tui::Style YELLOW{tui::Color::Yellow};
+constexpr tui::Style RED{tui::Color::Red};
+constexpr tui::Style BOLD{tui::Color::Default, true};
 } // namespace
 
 Application::Application() {
@@ -43,13 +25,39 @@ Application::Application() {
       &_playbackCtx, &_ringBufferCtx, &_visualizationCtx, &_mResponseCtx,
       &_trackQueue);
   _cli = std::make_unique<core::Cli>(_mixer);
+
+  _frame = &_widgets.Emplace<tui::Frame>("player-frame");
+  _summary = &_widgets.Emplace<tui::Label>("playback-summary");
+  _nowPlayingRule = &_widgets.Emplace<tui::Rule>("now-playing-rule");
+  _nowPlaying = &_widgets.Emplace<tui::Label>("now-playing");
+  _details = &_widgets.Emplace<tui::Label>("track-details");
+  _progress = &_widgets.Emplace<tui::ProgressBar>("track-progress");
+  _queueRule = &_widgets.Emplace<tui::Rule>("queue-rule");
+  for (std::size_t index = 0; index < _queueItems.size(); ++index) {
+    _queueItems[index] =
+        &_widgets.Emplace<tui::Label>("queue-item-" + std::to_string(index));
+  }
+  _waveformRule = &_widgets.Emplace<tui::Rule>("waveform-rule");
+  _waveform = &_widgets.Emplace<tui::Label>("waveform");
+  _separator = &_widgets.Emplace<tui::Rule>("status-rule");
+  _status = &_widgets.Emplace<tui::Label>("status");
+  _help = &_widgets.Emplace<tui::Label>("command-help");
+  _input = &_widgets.Emplace<tui::TextInput>("command-input");
+
+  _frame->SetTitle({{" TERMIFY", CYAN_BOLD},
+                    {" ─ terminal audio player", MUTED}});
+  _nowPlayingRule->SetLabel("NOW PLAYING");
+  _queueRule->SetLabel("UP NEXT");
+  _waveformRule->SetLabel("LIVE WAVEFORM");
+  _input->SetPrompt({{"termify", CYAN_BOLD}, {" › ", {}}});
+  _widgets.Focus("command-input");
 }
 
 Application::~Application() {
   if (_mixer) {
     _mixer->Shutdown();
   }
-  leaveTerminal();
+  _terminal.Leave();
 }
 
 void Application::Start() {
@@ -58,25 +66,28 @@ void Application::Start() {
     _statusIsError = true;
   }
 
-  enterTerminal();
+  _terminal.Enter();
+  if (!_terminal.Interactive()) {
+    runStreamInput();
+    return;
+  }
+
   std::thread visualization([this] { waveformLoop(); });
   try {
-    while (_playbackCtx.gRunning.load()) {
-      _cli->Run();
-    }
+    runInteractiveInput();
   } catch (...) {
     _mixer->Shutdown();
     if (visualization.joinable()) {
       visualization.join();
     }
-    leaveTerminal();
+    _terminal.Leave();
     throw;
   }
 
   if (visualization.joinable()) {
     visualization.join();
   }
-  leaveTerminal();
+  _terminal.Leave();
 }
 
 void Application::waveformLoop() {
@@ -84,6 +95,69 @@ void Application::waveformLoop() {
     renderUi();
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
   }
+}
+
+void Application::runInteractiveInput() {
+  while (_playbackCtx.gRunning.load()) {
+    auto event = _terminal.ReadEvent();
+    if (!event) {
+      _mixer->Shutdown();
+      return;
+    }
+
+    if (const auto *key = std::get_if<tui::KeyEvent>(&*event);
+        key && (key->key == tui::Key::Interrupt ||
+                key->key == tui::Key::EndOfInput)) {
+      _mixer->Shutdown();
+      return;
+    }
+
+    if (auto *mouse = std::get_if<tui::MouseEvent>(&*event)) {
+      mouse->column -= _visualizationCtx.uiLeftColumn.load();
+      mouse->row -= _visualizationCtx.uiTopRow.load();
+    }
+
+    std::optional<string> submission;
+    {
+      std::lock_guard widgetLock(_widgetMtx);
+      _widgets.Dispatch(*event);
+      submission = _input->TakeSubmission();
+    }
+    if (submission && !submission->empty()) {
+      _cli->Execute(*submission);
+    }
+  }
+}
+
+void Application::runStreamInput() {
+  string line;
+  while (_playbackCtx.gRunning.load() && std::getline(std::cin, line)) {
+    _cli->Execute(line);
+  }
+  if (_playbackCtx.gRunning.load()) {
+    _mixer->Shutdown();
+  }
+}
+
+void Application::configureWidgets(int width) {
+  const int contentWidth = width - 6;
+  _frame->SetBounds({0, 0, width, 16});
+  _summary->SetBounds({3, 1, contentWidth, 1});
+  _nowPlayingRule->SetBounds({0, 2, width, 1});
+  _nowPlaying->SetBounds({3, 3, contentWidth, 1});
+  _details->SetBounds({3, 4, contentWidth, 1});
+  _progress->SetBounds({3, 5, contentWidth, 1});
+  _queueRule->SetBounds({0, 6, width, 1});
+  for (std::size_t index = 0; index < _queueItems.size(); ++index) {
+    _queueItems[index]->SetBounds(
+        {3, 7 + static_cast<int>(index), contentWidth, 1});
+  }
+  _waveformRule->SetBounds({0, 10, width, 1});
+  _waveform->SetBounds({3, 11, contentWidth, 1});
+  _separator->SetBounds({0, 12, width, 1});
+  _status->SetBounds({3, 13, contentWidth, 1});
+  _help->SetBounds({3, 14, contentWidth, 1});
+  _input->SetBounds({0, 16, width, 1});
 }
 
 void Application::renderUi() {
@@ -96,7 +170,7 @@ void Application::renderUi() {
   const int top = std::max(1, (rows - 17) / 2 + 1);
   _visualizationCtx.uiLeftColumn.store(left);
   _visualizationCtx.uiTopRow.store(top);
-  const std::size_t contentWidth = static_cast<std::size_t>(width - 4);
+  const int contentWidth = width - 6;
   const string track = _mixer->TrackName();
   const auto queue = _trackQueue.Snapshot(3);
   const auto queueSize = _trackQueue.Size();
@@ -111,8 +185,8 @@ void Application::renderUi() {
 
   const string state = loading ? "LOADING" :
                        (paused ? "PAUSED" : (playing ? "PLAYING" : "IDLE"));
-  const char *stateColor = loading ? YELLOW :
-                           (paused ? YELLOW : (playing ? GREEN : MUTED));
+  const tui::Style stateStyle =
+      loading ? YELLOW : (paused ? YELLOW : (playing ? GREEN : MUTED));
   const string repeat = _mixer->IsRepeatOn() ? "ON" : "OFF";
   const string nowPlaying = track.empty()
                                 ? "Nothing playing"
@@ -128,13 +202,66 @@ void Application::renderUi() {
   } else if (!metadata.album.empty()) {
     details = metadata.album;
   }
-  string inputLine;
-  std::size_t inputCursor = 0;
-  {
-    std::lock_guard inputLock(_visualizationCtx.inputMtx);
-    inputLine = _visualizationCtx.inputLine;
-    inputCursor = _visualizationCtx.inputCursor;
+
+  const uint64 position = _playbackCtx.positionFrames.load();
+  const uint64 duration = _playbackCtx.durationFrames.load();
+  const double ratio = duration > 0
+                           ? std::clamp(static_cast<double>(position) /
+                                            static_cast<double>(duration),
+                                        0.0, 1.0)
+                           : 0.0;
+
+  std::lock_guard widgetLock(_widgetMtx);
+  configureWidgets(width);
+  _summary->SetSpans({{"● " + state, stateStyle},
+                      {"    QUEUE " + std::to_string(queueSize) +
+                           "    REPEAT " + repeat + "    VOL " +
+                           std::to_string(_mixer->Volume()) + "%",
+                       MUTED}});
+  _nowPlaying->SetText(tui::Canvas::Clip(nowPlaying, contentWidth), BOLD);
+  _details->SetText(tui::Canvas::Clip(details, contentWidth), MUTED);
+  _progress->SetProgress(ratio);
+  _progress->SetLabels(formatDuration(position),
+                       duration > 0 ? formatDuration(duration) : "--:--");
+
+  for (std::size_t index = 0; index < _queueItems.size(); ++index) {
+    if (index < queue.size()) {
+      const auto &queued = queue[index];
+      string marker = "· ";
+      tui::Style markerStyle = MUTED;
+      if (queued.state == core::QueueState::Downloading) {
+        marker = "↓ ";
+        markerStyle = YELLOW;
+      } else if (queued.state == core::QueueState::Ready) {
+        marker = "✓ ";
+        markerStyle = GREEN;
+      } else if (queued.state == core::QueueState::Failed) {
+        marker = "! ";
+        markerStyle = RED;
+      }
+      _queueItems[index]->SetSpans(
+          {{marker, markerStyle},
+           {tui::Canvas::Clip(queued.query, contentWidth - 2), {}}});
+    } else if (index == 0) {
+      _queueItems[index]->SetText("Queue is empty", MUTED);
+    } else {
+      _queueItems[index]->SetText("");
+    }
   }
+
+  _waveform->SetText(buildWaveform(static_cast<std::size_t>(contentWidth)),
+                     CYAN);
+  const tui::Style statusStyle = _statusIsError ? RED : GREEN;
+  _status->SetSpans(
+      {{_statusIsError ? "! " : "› ", statusStyle},
+       {tui::Canvas::Clip(_statusMessage, contentWidth - 2), statusStyle}});
+  _help->SetText(tui::Canvas::Clip(
+                     "play · pause · next · repeat · volume · stop · help",
+                     contentWidth),
+                 MUTED);
+
+  tui::Canvas canvas(width, core::VisualizationContext::PROMPT_ROW);
+  _widgets.Render(canvas);
 
   std::lock_guard outputLock(_visualizationCtx.coutMtx);
   if (_lastUiLeft != left || _lastUiTop != top) {
@@ -142,87 +269,9 @@ void Application::renderUi() {
     _lastUiLeft = left;
     _lastUiTop = top;
   }
-  auto line = [left, top](int row, const string &content) {
-    std::cout << "\033[" << top + row - 1 << ';' << left << "H\033[2K"
-              << content;
-  };
-  auto frameLine = [left, top, width](int row, const string &content,
-                                      const string &rightEdge) {
-    const int terminalRow = top + row - 1;
-    std::cout << "\033[" << terminalRow << ';' << left << "H\033[2K"
-              << content << "\033[" << terminalRow << ';'
-              << left + width - 1 << 'H' << CYAN << rightEdge << RESET;
-  };
+  canvas.Present(std::cout, {left, top}, _widgets.Cursor());
+  return;
 
-  const string headerText = "╭─ TERMIFY ─ terminal audio player ";
-  const int headerFill = std::max(
-      0, width - 1 - static_cast<int>(textLength(headerText)));
-  frameLine(1, string(CYAN) + BOLD + "╭─ TERMIFY" + RESET + MUTED +
-                   " ─ terminal audio player " +
-                   repeatGlyph("─", headerFill) + RESET,
-            "╮");
-  frameLine(2, "│  " + string(stateColor) + "● " + state + RESET + MUTED +
-                   "    QUEUE " + std::to_string(queueSize) + "    REPEAT " +
-                   repeat + "    VOL " + std::to_string(_mixer->Volume()) +
-                   "%" + RESET,
-            "│");
-  frameLine(3, string(MUTED) + rule(width, "NOW PLAYING") + RESET, "┤");
-  frameLine(4,
-            "│  " + string(BOLD) + clipText(nowPlaying, contentWidth) + RESET,
-            "│");
-  frameLine(5, "│  " + string(MUTED) + clipText(details, contentWidth) + RESET,
-            "│");
-  frameLine(6, "│  " + buildProgress(contentWidth), "│");
-  frameLine(7, string(MUTED) + rule(width, "UP NEXT") + RESET, "┤");
-
-  for (int index = 0; index < 3; ++index) {
-    string item;
-    if (static_cast<std::size_t>(index) < queue.size()) {
-      const auto &queued = queue[index];
-      const char *marker = "·";
-      const char *color = MUTED;
-      if (queued.state == core::QueueState::Downloading) {
-        marker = "↓";
-        color = YELLOW;
-      } else if (queued.state == core::QueueState::Ready) {
-        marker = "✓";
-        color = GREEN;
-      } else if (queued.state == core::QueueState::Failed) {
-        marker = "!";
-        color = RED;
-      }
-      item = string(color) + marker + " " + RESET +
-             clipText(queued.query, contentWidth - 2);
-    } else if (index == 0) {
-      item = string(MUTED) + "Queue is empty" + RESET;
-    }
-    frameLine(8 + index, "│  " + item, "│");
-  }
-
-  frameLine(11, string(MUTED) + rule(width, "LIVE WAVEFORM") + RESET, "┤");
-  frameLine(12,
-            "│  " + string(CYAN) + buildWaveform(contentWidth) + RESET,
-            "│");
-  frameLine(13, string(MUTED) + rule(width) + RESET, "┤");
-  frameLine(14, "│  " + string(_statusIsError ? RED : GREEN) +
-                    (_statusIsError ? "! " : "› ") +
-                    clipText(_statusMessage, contentWidth - 2) + RESET,
-            "│");
-  frameLine(15, "│  " + string(MUTED) +
-                    clipText(
-                        "play · pause · next · repeat · volume · stop · help",
-                        contentWidth) +
-                    RESET,
-            "│");
-  frameLine(16, string(CYAN) + "╰" + repeatGlyph("─", width - 2) + RESET,
-            "╯");
-  line(core::VisualizationContext::PROMPT_ROW,
-       string(CYAN) + "termify" + RESET + " \u203a " + inputLine);
-  const std::size_t charactersBeforeCursor =
-      textLength(inputLine.substr(0, inputCursor));
-  std::cout << "\033[" << top + core::VisualizationContext::PROMPT_ROW - 1
-            << ';'
-            << left + 10 + charactersBeforeCursor << 'H' << std::flush;
 }
 
 string Application::formatDuration(uint64 frames) {
@@ -240,24 +289,6 @@ string Application::formatDuration(uint64 frames) {
   return output.str();
 }
 
-string Application::buildProgress(std::size_t width) const {
-  const uint64 position = _playbackCtx.positionFrames.load();
-  const uint64 duration = _playbackCtx.durationFrames.load();
-  const string current = formatDuration(position);
-  const string total = duration > 0 ? formatDuration(duration) : "--:--";
-  const std::size_t fixed = current.size() + total.size() + 4;
-  const std::size_t barWidth = width > fixed ? width - fixed : 1;
-  const double ratio = duration > 0
-                           ? std::clamp(static_cast<double>(position) /
-                                            static_cast<double>(duration),
-                                        0.0, 1.0)
-                           : 0.0;
-  const std::size_t filled = static_cast<std::size_t>(ratio * barWidth);
-  return string(MUTED) + current + " [" + RESET + CYAN +
-         repeatGlyph("━", static_cast<int>(filled)) + MUTED +
-         repeatGlyph("─", static_cast<int>(barWidth - filled)) + "] " + total +
-         RESET;
-}
 
 void Application::readLatestMessage() {
   std::lock_guard lock(_mResponseCtx.resMtx);
@@ -269,36 +300,6 @@ void Application::readLatestMessage() {
   }
 }
 
-void Application::enterTerminal() {
-  if (isatty(STDIN_FILENO) &&
-      tcgetattr(STDIN_FILENO, &_originalTermios) == 0) {
-    termios inputMode = _originalTermios;
-    inputMode.c_lflag &= static_cast<tcflag_t>(~(ICANON | ECHO));
-    inputMode.c_iflag &= static_cast<tcflag_t>(~(IXON | ICRNL));
-    inputMode.c_cc[VMIN] = 1;
-    inputMode.c_cc[VTIME] = 0;
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &inputMode) == 0) {
-      _termiosActive = true;
-    }
-  }
-
-  std::lock_guard lock(_visualizationCtx.coutMtx);
-  std::cout << "\033[?1049h\033[2J\033[H\033[?25h" << std::flush;
-  _terminalActive = true;
-}
-
-void Application::leaveTerminal() {
-  if (!_terminalActive) {
-    return;
-  }
-  std::lock_guard lock(_visualizationCtx.coutMtx);
-  std::cout << "\033[?25h\033[?1049l" << std::flush;
-  _terminalActive = false;
-  if (_termiosActive) {
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &_originalTermios);
-    _termiosActive = false;
-  }
-}
 
 string Application::buildWaveform(std::size_t width) {
   static constexpr const char *levels[] = {"·", "▁", "▂", "▃", "▄",
@@ -330,37 +331,6 @@ string Application::buildWaveform(std::size_t width) {
   return output;
 }
 
-string Application::clipText(const string &text, std::size_t maxCharacters) {
-  if (textLength(text) <= maxCharacters) {
-    return text;
-  }
-  if (maxCharacters <= 3) {
-    return string(maxCharacters, '.');
-  }
-
-  std::size_t bytes = 0;
-  std::size_t characters = 0;
-  const std::size_t target = maxCharacters - 3;
-  while (bytes < text.size() && characters < target) {
-    const unsigned char lead = static_cast<unsigned char>(text[bytes]);
-    std::size_t sequence = 1;
-    if ((lead & 0xE0) == 0xC0)
-      sequence = 2;
-    else if ((lead & 0xF0) == 0xE0)
-      sequence = 3;
-    else if ((lead & 0xF8) == 0xF0)
-      sequence = 4;
-    bytes += std::min(sequence, text.size() - bytes);
-    ++characters;
-  }
-  return text.substr(0, bytes) + "...";
-}
-
-std::size_t Application::textLength(const string &text) {
-  return static_cast<std::size_t>(std::count_if(
-      text.begin(), text.end(),
-      [](unsigned char ch) { return (ch & 0xC0) != 0x80; }));
-}
 
 int Application::terminalWidth() {
   winsize size{};

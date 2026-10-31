@@ -40,9 +40,10 @@ sudo ./install.sh /usr/local
 ```
 
 The archive includes the official standalone `yt-dlp` 2026.10.26 executable.
-The installer keeps it private in `~/.local/lib/termify`, so it does not replace
-or interfere with a system installation. Python and a separate yt-dlp install
-are not required.
+The installer normally keeps it private in `~/.local/lib/termify`, so it does
+not replace or interfere with a system installation. If that directory is not
+writable, it safely falls back to placing yt-dlp beside the Termify executable.
+Python and a separate yt-dlp install are not required.
 
 ### Distribution setup
 
@@ -174,12 +175,19 @@ make install    # build, test, and install to /usr/local/bin
 its SHA-256 digest, and includes it in the archive. This packaging step requires
 network access; ordinary source builds do not.
 
+The terminal interface is composed from reusable, keyboard- and mouse-aware
+widgets. See [docs/TUI.md](docs/TUI.md) before adding or changing interface
+components.
+
 ## Platform status
 
 Termify currently supports Linux. Windows support is planned around a
 cross-platform audio backend and platform-specific terminal and process
 adapters; the decoder, queue, metadata, progress, and playback state are
 already portable.
+
+The supported-release goals and milestones are tracked in
+[ROADMAP.md](ROADMAP.md).
 
 ## License
 

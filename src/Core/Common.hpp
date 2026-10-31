@@ -61,9 +61,6 @@ struct VisualizationContext {
   std::array<int16, BUFFER_SIZE> visBuffer{};
   std::mutex visMtx;
   std::mutex coutMtx;
-  std::mutex inputMtx;
-  string inputLine;
-  std::size_t inputCursor{0};
   std::atomic<int> uiLeftColumn{1};
   std::atomic<int> uiTopRow{1};
 };
