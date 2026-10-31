@@ -100,14 +100,14 @@ int main() {
   CHECK(future.Selected() == 2);
 
   WidgetHost controls;
-  auto &play = controls.Emplace<Button>("play", "|> PLAY");
-  auto &pause = controls.Emplace<Button>("pause", "|| PAUSE");
-  auto &next = controls.Emplace<Button>("next", "->| NEXT");
-  auto &stop = controls.Emplace<Button>("stop", "[] STOP");
-  play.SetBounds({0, 0, 13, 1});
-  pause.SetBounds({14, 0, 13, 1});
-  next.SetBounds({28, 0, 13, 1});
-  stop.SetBounds({42, 0, 13, 1});
+  auto &play = controls.Emplace<Button>("play", "|>");
+  auto &pause = controls.Emplace<Button>("pause", "||");
+  auto &next = controls.Emplace<Button>("next", ">|");
+  auto &stop = controls.Emplace<Button>("stop", "[]");
+  play.SetBounds({0, 0, 6, 1});
+  pause.SetBounds({7, 0, 6, 1});
+  next.SetBounds({14, 0, 6, 1});
+  stop.SetBounds({21, 0, 6, 1});
   CHECK(controls.Focus("play"));
   CHECK(controls.Dispatch(KeyEvent{Key::Enter, {}, {}}));
   CHECK(play.TakeActivation());
@@ -116,19 +116,19 @@ int main() {
   CHECK(controls.Dispatch(KeyEvent{Key::Character, " ", {}}));
   CHECK(pause.TakeActivation());
   CHECK(controls.Dispatch(
-      MouseEvent{MouseButton::Left, MouseAction::Press, 30, 0, {}}));
+      MouseEvent{MouseButton::Left, MouseAction::Press, 16, 0, {}}));
   CHECK(next.TakeActivation());
   CHECK(controls.FocusedId() == "next");
   CHECK(controls.Dispatch(
-      MouseEvent{MouseButton::Left, MouseAction::Press, 44, 0, {}}));
+      MouseEvent{MouseButton::Left, MouseAction::Press, 23, 0, {}}));
   CHECK(stop.TakeActivation());
-  Canvas controlsCanvas(55, 1);
+  Canvas controlsCanvas(27, 1);
   controls.Render(controlsCanvas);
   std::ostringstream controlsRendered;
   controlsCanvas.Present(controlsRendered, {1, 1});
-  CHECK(controlsRendered.str().find("|> PLAY") != std::string::npos);
-  CHECK(controlsRendered.str().find("|| PAUSE") != std::string::npos);
-  CHECK(controlsRendered.str().find("->| NEXT") != std::string::npos);
-  CHECK(controlsRendered.str().find("[] STOP") != std::string::npos);
+  CHECK(controlsRendered.str().find("[ |> ]") != std::string::npos);
+  CHECK(controlsRendered.str().find("[ || ]") != std::string::npos);
+  CHECK(controlsRendered.str().find("[ >| ]") != std::string::npos);
+  CHECK(controlsRendered.str().find("[ [] ]") != std::string::npos);
   return 0;
 }

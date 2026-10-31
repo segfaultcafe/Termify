@@ -161,8 +161,9 @@ next
 
 ### Navigate the interface
 
-- The Player tab has ASCII controls for **PLAY** (`|>`), **PAUSE** (`||`),
-  **NEXT** (`->|`), and **STOP** (`[]`). Click one, or reach it with Tab and
+- The Player tab's **NOW PLAYING** divider has compact ASCII controls for
+  **PLAY** (`|>`), **PAUSE** (`||`), **NEXT** (`>|`), and **STOP** (`[]`).
+  Click one, or reach it with Tab and
   activate it with Enter or Space. PLAY resumes paused audio; the command
   prompt remains available for adding new songs.
 - The bordered file-style tabs sit above the player. A cyan dot marks the
@@ -183,7 +184,7 @@ next
   **SHUFFLE**, and **LOOP**. Enter or Space activates a focused button.
 - New and renamed playlist names are entered at the bottom prompt; Escape
   cancels the naming prompt. Deletion requires activating **DELETE** twice.
-- The interactive layout requires a terminal of at least **68 × 21** cells.
+- The interactive layout requires a terminal of at least **68 × 20** cells.
 
 ### Local history and cache
 
