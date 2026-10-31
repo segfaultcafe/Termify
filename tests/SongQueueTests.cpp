@@ -7,7 +7,7 @@ using termify::core::SongQueue;
 #define CHECK(condition)                                                       \
   do {                                                                         \
     if (!(condition)) {                                                        \
-      std::cerr << "Check failed at line " << __LINE__ << ": " #condition    \
+      std::cerr << "Check failed at line " << __LINE__ << ": " #condition      \
                 << '\n';                                                       \
       return 1;                                                                \
     }                                                                          \
@@ -33,10 +33,12 @@ int main() {
   const auto claimed = queue.ClaimForPrefetch();
   CHECK(claimed && claimed->id == *firstId);
   CHECK(!queue.ReadyForPlayback());
-  CHECK(queue.MarkReady(*firstId, "/tmp/first.opus", true));
+  CHECK(queue.MarkReady(*firstId, "/tmp/first.opus", "https://example/first",
+                        true));
   CHECK(queue.ReadyForPlayback());
   const auto first = queue.PopForPlayback();
-  CHECK(first && first->query == "first" && first->temporary);
+  CHECK(first && first->query == "first" &&
+        first->source == "https://example/first" && first->temporary);
   const auto second = queue.PopForPlayback();
   CHECK(second && second->query == "second");
   CHECK(queue.Empty());

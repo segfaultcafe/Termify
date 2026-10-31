@@ -1,7 +1,7 @@
 #include "AudioDownloader.hpp"
 
-#include <cerrno>
 #include <cctype>
+#include <cerrno>
 #include <fcntl.h>
 #include <fstream>
 #include <signal.h>
@@ -47,7 +47,8 @@ string readDownloadError(const std::filesystem::path &path) {
     return "YouTube requires sign-in; yt-dlp cookies must be configured.";
   }
   if (message.find("HTTP Error 403") != string::npos) {
-    return "YouTube rejected the request (HTTP 403); update yt-dlp or use cookies.";
+    return "YouTube rejected the request (HTTP 403); update yt-dlp or use "
+           "cookies.";
   }
   if (message.size() > 220) {
     message.resize(217);
@@ -87,31 +88,54 @@ PreparedAudio YtDlpManager::PrepareAudio(const string &query,
                                          LocalStore *store) {
   std::error_code pathError;
   if (std::filesystem::is_regular_file(query, pathError)) {
-    return {.path = std::filesystem::absolute(query).string(), .temporary = false, .cacheLease = {}};
+    const auto path = std::filesystem::absolute(query).string();
+    return {.path = path, .source = path, .temporary = false, .cacheLease = {}};
   }
   if (std::filesystem::path(query).is_absolute())
-    throw std::runtime_error("Local audio file is missing or unreadable: " + query);
+    throw std::runtime_error("Local audio file is missing or unreadable: " +
+                             query);
   if (store) {
     try {
-      if (auto cached = store->FindAudio(query))
-        return {cached->path, false, std::move(cached->lease)};
-    } catch (const std::exception &) { /* Playback survives cache failures. */ }
-  }
-  const auto downloaded = DownloadAudioToFile(query, cancel);
-  if (store) {
-    try {
-      if (auto cached = store->StoreAudio(query, downloaded)) {
-        std::error_code error;
-        std::filesystem::remove(downloaded, error);
-        return {cached->path, false, std::move(cached->lease)};
+      if (auto cached = store->FindAudio(query)) {
+        if (!cached->source.starts_with("https://") &&
+            !cached->source.starts_with("http://")) {
+          try {
+            const auto canonical = resolveSource(query, cancel);
+            if (store->UpdateCachedSource(query, canonical))
+              cached->source = canonical;
+          } catch (const std::exception &) {
+            // Legacy cache hits stay playable while offline, but remain
+            // ineligible for playlists until their URL can be resolved.
+          }
+        }
+        return {cached->path, cached->source, false, std::move(cached->lease)};
       }
-    } catch (const std::exception &) { /* Keep the temporary download playable. */ }
+    } catch (const std::exception &) { /* Playback survives cache failures. */
+    }
   }
-  return {downloaded, true, {}};
+  const auto downloaded = download(query, cancel);
+  if (store) {
+    try {
+      if (auto cached =
+              store->StoreAudio(query, downloaded.path, downloaded.source)) {
+        std::error_code error;
+        std::filesystem::remove(downloaded.path, error);
+        return {cached->path, cached->source, false, std::move(cached->lease)};
+      }
+    } catch (
+        const std::exception &) { /* Keep the temporary download playable. */
+    }
+  }
+  return {downloaded.path, downloaded.source, true, {}};
 }
 
 string YtDlpManager::DownloadAudioToFile(const string &query,
                                          const atomic_bool *cancel) {
+  return download(query, cancel).path;
+}
+
+YtDlpManager::DownloadedAudio
+YtDlpManager::download(const string &query, const atomic_bool *cancel) {
   if (!_initialized)
     throw std::runtime_error(
         "yt-dlp is unavailable; reinstall Termify or set TERMIFY_YTDLP");
@@ -121,10 +145,11 @@ string YtDlpManager::DownloadAudioToFile(const string &query,
                       std::to_string(sequence.fetch_add(1));
   const string outputTemplate = stem + ".%(ext)s";
   const std::filesystem::path errorPath = stem + ".log";
-  const string source = query.starts_with("http://") ||
-                                query.starts_with("https://")
-                            ? query
-                            : "ytsearch1:" + query;
+  const std::filesystem::path sourcePath = stem + ".source";
+  const string source =
+      query.starts_with("http://") || query.starts_with("https://")
+          ? query
+          : "ytsearch1:" + query;
 
   const pid_t child = fork();
   if (child < 0)
@@ -132,10 +157,11 @@ string YtDlpManager::DownloadAudioToFile(const string &query,
 
   if (child == 0) {
     setpgid(0, 0);
-    const int devNull = open("/dev/null", O_WRONLY);
-    if (devNull >= 0) {
-      dup2(devNull, STDOUT_FILENO);
-      close(devNull);
+    const int sourceOutput =
+        open(sourcePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (sourceOutput >= 0) {
+      dup2(sourceOutput, STDOUT_FILENO);
+      close(sourceOutput);
     }
     const int errorLog =
         open(errorPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
@@ -144,10 +170,10 @@ string YtDlpManager::DownloadAudioToFile(const string &query,
       close(errorLog);
     }
 
-    execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(),
-          "--quiet", "--no-warnings", "--no-playlist", "--extract-audio",
-          "--audio-format", "mp3", "--embed-metadata", "-o",
-          outputTemplate.c_str(), source.c_str(),
+    execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(), "--quiet",
+          "--no-warnings", "--no-playlist", "--extract-audio", "--audio-format",
+          "mp3", "--embed-metadata", "--print", "after_move:%(webpage_url)s",
+          "-o", outputTemplate.c_str(), source.c_str(),
           static_cast<char *>(nullptr));
     _exit(127);
   }
@@ -167,6 +193,7 @@ string YtDlpManager::DownloadAudioToFile(const string &query,
       std::filesystem::remove(stem + ".mp3", error);
       std::filesystem::remove(stem + ".mp3.part", error);
       std::filesystem::remove(errorPath, error);
+      std::filesystem::remove(sourcePath, error);
       throw std::runtime_error("Download cancelled");
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -180,11 +207,92 @@ string YtDlpManager::DownloadAudioToFile(const string &query,
     std::filesystem::remove(output, error);
     std::filesystem::remove(output + ".part", error);
     std::filesystem::remove(errorPath, error);
+    std::filesystem::remove(sourcePath, error);
     throw std::runtime_error("yt-dlp: " + detail);
   }
   std::error_code error;
   std::filesystem::remove(errorPath, error);
-  return output;
+  string canonicalSource;
+  {
+    std::ifstream sourceStream(sourcePath);
+    std::getline(sourceStream, canonicalSource);
+  }
+  std::filesystem::remove(sourcePath, error);
+  canonicalSource.erase(
+      std::remove_if(canonicalSource.begin(), canonicalSource.end(),
+                     [](unsigned char character) {
+                       return character < 32 || character == 127;
+                     }),
+      canonicalSource.end());
+  if (!canonicalSource.starts_with("https://") &&
+      !canonicalSource.starts_with("http://"))
+    canonicalSource = query;
+  return {output, canonicalSource};
+}
+
+string YtDlpManager::resolveSource(const string &query,
+                                   const atomic_bool *cancel) {
+  if (!_initialized)
+    throw std::runtime_error("yt-dlp is unavailable");
+  static std::atomic_uint64_t sequence{0};
+  const string path = "/tmp/termify-source-" + std::to_string(getpid()) + "-" +
+                      std::to_string(sequence.fetch_add(1));
+  const string source =
+      query.starts_with("http://") || query.starts_with("https://")
+          ? query
+          : "ytsearch1:" + query;
+  const pid_t child = fork();
+  if (child < 0)
+    throw std::runtime_error("Failed to start yt-dlp");
+  if (child == 0) {
+    setpgid(0, 0);
+    const int output = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (output >= 0) {
+      dup2(output, STDOUT_FILENO);
+      close(output);
+    }
+    const int devNull = open("/dev/null", O_WRONLY);
+    if (devNull >= 0) {
+      dup2(devNull, STDERR_FILENO);
+      close(devNull);
+    }
+    execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(), "--quiet",
+          "--no-warnings", "--no-playlist", "--skip-download", "--print",
+          "%(webpage_url)s", source.c_str(), static_cast<char *>(nullptr));
+    _exit(127);
+  }
+  setpgid(child, child);
+  int status = 0;
+  while (true) {
+    const pid_t result = waitpid(child, &status, WNOHANG);
+    if (result == child)
+      break;
+    if (result < 0 && errno != EINTR)
+      throw std::runtime_error("Failed while resolving media URL");
+    if (cancel && cancel->load()) {
+      kill(-child, SIGTERM);
+      waitpid(child, &status, 0);
+      std::error_code error;
+      std::filesystem::remove(path, error);
+      throw std::runtime_error("Source resolution cancelled");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  string canonical;
+  {
+    std::ifstream stream(path);
+    std::getline(stream, canonical);
+  }
+  std::error_code error;
+  std::filesystem::remove(path, error);
+  canonical.erase(
+      std::remove_if(canonical.begin(), canonical.end(),
+                     [](unsigned char ch) { return ch < 32 || ch == 127; }),
+      canonical.end());
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+      (!canonical.starts_with("https://") && !canonical.starts_with("http://")))
+    throw std::runtime_error("yt-dlp did not resolve a canonical media URL");
+  return canonical;
 }
 
 std::filesystem::path YtDlpManager::getGlobalLocation() {
@@ -241,8 +349,7 @@ std::filesystem::path YtDlpManager::getYtDlpLocation() {
       const std::size_t end = paths.find(':', start);
       const string directory = paths.substr(start, end - start);
       if (!directory.empty()) {
-        const auto candidate =
-            std::filesystem::path(directory) / "yt-dlp";
+        const auto candidate = std::filesystem::path(directory) / "yt-dlp";
         if (access(candidate.c_str(), X_OK) == 0) {
           return candidate;
         }

@@ -23,6 +23,8 @@ std::optional<string> commandHelp(const string &topic) {
     return "history — open play history; arrows select, Enter queues a track";
   case Command::PLAYER:
     return "player — return to the player tab";
+  case Command::PLAYLISTS:
+    return "playlists — open the playlist manager";
   case Command::QUEUE:
     return "queue — show how many tracks are waiting";
   case Command::CLEAR:
@@ -64,14 +66,19 @@ Command StringToCommand(string command) {
     return Command::CLEAR;
   if (command == "volume" || command == "vol" || command == ".v")
     return Command::VOLUME;
-  if (command == "history") return Command::HISTORY;
-  if (command == "player") return Command::PLAYER;
+  if (command == "history")
+    return Command::HISTORY;
+  if (command == "player")
+    return Command::PLAYER;
+  if (command == "playlists" || command == "playlist")
+    return Command::PLAYLISTS;
   if (command == "help" || command == ".h" || command == "?")
     return Command::HELP;
   return Command::UNKNOWN;
 }
 
-Cli::Cli(std::unique_ptr<Mixer> &mixer, std::function<void(bool)> switchTab)
+Cli::Cli(std::unique_ptr<Mixer> &mixer,
+         std::function<void(std::size_t)> switchTab)
     : _mixer(mixer), _switchTab(std::move(switchTab)) {}
 
 void Cli::Execute(const string &line) {
@@ -102,8 +109,7 @@ void Cli::Execute(const string &line) {
     _mixer->Stop(false, true);
     break;
   case Command::REPEAT:
-    _repeatRequested.store(!_repeatRequested.load());
-    _mixer->ToggleRepeat(_repeatRequested.load());
+    _mixer->ToggleRepeat(!_mixer->IsRepeatOn());
     break;
   case Command::PAUSE:
     _mixer->Pause();
@@ -113,9 +119,9 @@ void Cli::Execute(const string &line) {
     break;
   case Command::QUEUE: {
     const auto count = ctx->trackQueue->Size();
-    _mixer->PublishMessage(count == 1 ? "1 track is queued."
-                                      : std::to_string(count) +
-                                            " tracks are queued.");
+    _mixer->PublishMessage(count == 1
+                               ? "1 track is queued."
+                               : std::to_string(count) + " tracks are queued.");
     break;
   }
   case Command::CLEAR:
@@ -124,8 +130,8 @@ void Cli::Execute(const string &line) {
     break;
   case Command::VOLUME: {
     if (args.size() == 1) {
-      _mixer->PublishMessage("Volume is " +
-                             std::to_string(_mixer->Volume()) + "%.");
+      _mixer->PublishMessage("Volume is " + std::to_string(_mixer->Volume()) +
+                             "%.");
       break;
     }
     if (args.size() != 2) {
@@ -138,7 +144,8 @@ void Cli::Execute(const string &line) {
       if (parsed != args[1].size()) {
         throw std::invalid_argument("trailing characters");
       }
-      const bool relative = args[1].starts_with('+') || args[1].starts_with('-');
+      const bool relative =
+          args[1].starts_with('+') || args[1].starts_with('-');
       _mixer->SetVolume(relative ? _mixer->Volume() + value : value);
     } catch (const std::exception &) {
       _mixer->PublishMessage("Usage: volume <0-100 | +N | -N>", true);
@@ -147,9 +154,9 @@ void Cli::Execute(const string &line) {
   }
   case Command::HELP:
     if (args.size() == 1) {
-      _mixer->PublishMessage(
-          "play  pause  resume  next  repeat  volume  history  player  stop  queue  clear  "
-          "exit — use help <command>");
+      _mixer->PublishMessage("play  pause  resume  next  repeat  volume  "
+                             "history  playlists  player  stop  queue  clear  "
+                             "exit — use help <command>");
       break;
     }
     if (args.size() != 2) {
@@ -166,10 +173,15 @@ void Cli::Execute(const string &line) {
     break;
   case Command::HISTORY:
   case Command::PLAYER:
+  case Command::PLAYLISTS:
     if (args.size() != 1) {
-      _mixer->PublishMessage("Usage: history | player (no arguments)", true);
+      _mixer->PublishMessage(
+          "Usage: history | playlists | player (no arguments)", true);
     } else if (_switchTab) {
-      _switchTab(StringToCommand(args.front()) == Command::HISTORY);
+      const auto command = StringToCommand(args.front());
+      _switchTab(command == Command::HISTORY     ? 1
+                 : command == Command::PLAYLISTS ? 2
+                                                 : 0);
     }
     break;
   case Command::UNKNOWN:
@@ -177,7 +189,6 @@ void Cli::Execute(const string &line) {
     break;
   }
 }
-
 
 vector<string> Cli::parseArgs(const string &input) const {
   vector<string> result;

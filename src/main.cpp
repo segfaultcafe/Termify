@@ -16,9 +16,10 @@ void printHelp() {
       << "  -V, --version    Show the version and exit\n\n"
       << "Interactive commands:\n"
       << "  play <song|URL|file>  pause  resume  next  repeat\n"
-      << "  volume <0-100|+N|-N>  history  player  queue  clear  stop  help  exit\n";
+      << "  volume <0-100|+N|-N>  history  playlists  player\n"
+      << "  queue  clear  stop  help  exit\n";
 }
-}
+} // namespace
 
 int main(int argc, char **argv) {
   if (argc > 1) {
@@ -36,7 +37,7 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  struct sigaction action {};
+  struct sigaction action{};
   action.sa_handler = handleInterrupt;
   sigemptyset(&action.sa_mask);
   sigaction(SIGINT, &action, nullptr);

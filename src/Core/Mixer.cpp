@@ -1,11 +1,14 @@
 #include "Mixer.hpp"
 #include "AudioDownloader.hpp"
 
+#include <random>
+
 namespace termify::core {
 
 Mixer::Mixer(PlaybackContext *playback, RingBufferContext *ringBuffer,
              VisualizationContext *visualization,
-             MixerResponseContext *responses, SongQueue *queue, LocalStore *store) {
+             MixerResponseContext *responses, SongQueue *queue,
+             LocalStore *store) {
   _ctx.playbackCtx = playback;
   _ctx.ringBufferCtx = ringBuffer;
   _ctx.visualizationCtx = visualization;
@@ -23,20 +26,63 @@ bool Mixer::AddToQueue(string song) {
   if (std::filesystem::is_regular_file(song, pathError))
     song = std::filesystem::absolute(song).lexically_normal().string();
   const string displayName = song;
-  if (!_ctx.trackQueue->Push(std::move(song))) {
+  {
+    std::lock_guard playlistLock(_playlistMtx);
+    _playlistActive = false;
+    _playlistSongs.clear();
+  }
+  if (!enqueue(std::move(song))) {
     dispatchResponse("The queue is full (20 tracks).", true);
     return false;
   }
 
   dispatchResponse("Added to queue: " + displayName);
+  return true;
+}
+
+bool Mixer::enqueue(string song) {
+  if (!_ctx.trackQueue->Push(std::move(song)))
+    return false;
   _schedulerCv.notify_one();
   _prefetchCv.notify_one();
+  return true;
+}
+
+bool Mixer::StartPlaylist(vector<string> songs, string name, bool shuffle,
+                          bool loop) {
+  if (songs.empty()) {
+    dispatchResponse("This playlist has no tracks.", true);
+    return false;
+  }
+  if (songs.size() > SongQueue::MAX_SONGS) {
+    dispatchResponse("A playlist can contain at most 20 tracks.", true);
+    return false;
+  }
+  _repeatSong.store(false);
+  Stop(true, true);
+  {
+    std::lock_guard playlistLock(_playlistMtx);
+    _playlistSongs = std::move(songs);
+    _playlistName = std::move(name);
+    _playlistShuffle = shuffle;
+    _playlistLoop = loop;
+    _playlistActive = true;
+  }
+  if (!queuePlaylistCycle())
+    return false;
+  dispatchResponse("Playing playlist: " + _playlistName +
+                   (shuffle ? " · shuffle" : "") + (loop ? " · loop" : ""));
   return true;
 }
 
 string Mixer::TrackName() const {
   std::lock_guard lock(_trackMtx);
   return _trackName;
+}
+
+string Mixer::CurrentSource() const {
+  std::lock_guard lock(_trackMtx);
+  return _trackSource;
 }
 
 void Mixer::Pause() {
@@ -111,6 +157,7 @@ void Mixer::Stop(bool force, bool clearQueue) {
   {
     std::lock_guard trackLock(_trackMtx);
     _trackName.clear();
+    _trackSource.clear();
   }
   {
     std::lock_guard metadataLock(_ctx.playbackCtx->metadataMtx);
@@ -125,12 +172,44 @@ void Mixer::Stop(bool force, bool clearQueue) {
   _ctx.ringBufferCtx->ringCv.notify_all();
 }
 
-void Mixer::ClearQueue() {
+void Mixer::ClearQueue() { clearQueue(true); }
+
+void Mixer::clearQueue(bool cancelPlaylist) {
+  if (cancelPlaylist) {
+    std::lock_guard playlistLock(_playlistMtx);
+    _playlistActive = false;
+    _playlistSongs.clear();
+  }
   for (const auto &song : _ctx.trackQueue->Clear()) {
     cleanupPrepared(song);
   }
   _schedulerCv.notify_one();
   _prefetchCv.notify_one();
+}
+
+bool Mixer::queuePlaylistCycle() {
+  vector<string> songs;
+  bool shuffle = false;
+  {
+    std::lock_guard playlistLock(_playlistMtx);
+    if (!_playlistActive || _playlistSongs.empty())
+      return false;
+    songs = _playlistSongs;
+    shuffle = _playlistShuffle;
+  }
+  if (shuffle) {
+    std::random_device device;
+    std::mt19937 generator(device());
+    std::shuffle(songs.begin(), songs.end(), generator);
+  }
+  for (auto &song : songs) {
+    if (!enqueue(std::move(song))) {
+      dispatchResponse("The queue filled before the playlist was loaded.",
+                       true);
+      return false;
+    }
+  }
+  return true;
 }
 
 void Mixer::SetVolume(int percent) {
@@ -209,8 +288,9 @@ void Mixer::prefetchLoop() {
     try {
       auto prepared = YtDlpManager::Self().PrepareAudio(
           song->query, &_prefetchCancel, _ctx.store);
-      if (!_ctx.trackQueue->MarkReady(song->id, prepared.path,
-                                      prepared.temporary, prepared.cacheLease) &&
+      if (!_ctx.trackQueue->MarkReady(song->id, prepared.path, prepared.source,
+                                      prepared.temporary,
+                                      prepared.cacheLease) &&
           prepared.temporary) {
         std::error_code error;
         std::filesystem::remove(prepared.path, error);
@@ -228,8 +308,7 @@ void Mixer::prefetchLoop() {
 void Mixer::startNext() {
   std::lock_guard controlLock(_controlMtx);
   if (!_ctx.playbackCtx->gRunning.load() ||
-      _ctx.playbackCtx->isPlaying.load() ||
-      _ctx.playbackCtx->isPaused.load()) {
+      _ctx.playbackCtx->isPlaying.load() || _ctx.playbackCtx->isPaused.load()) {
     return;
   }
 
@@ -254,6 +333,7 @@ void Mixer::startNext() {
   {
     std::lock_guard trackLock(_trackMtx);
     _trackName = song.query;
+    _trackSource = song.source.empty() ? song.query : song.source;
   }
   {
     std::lock_guard metadataLock(_ctx.playbackCtx->metadataMtx);
@@ -277,14 +357,20 @@ void Mixer::startNext() {
         auto prepared = YtDlpManager::Self().PrepareAudio(
             preparedSong.query, &_ctx.playbackCtx->shouldStop, _ctx.store);
         preparedSong.preparedPath = std::move(prepared.path);
+        preparedSong.source = std::move(prepared.source);
         preparedSong.temporary = prepared.temporary;
         preparedSong.cacheLease = std::move(prepared.cacheLease);
+      }
+      {
+        std::lock_guard trackLock(_trackMtx);
+        _trackSource = preparedSong.source.empty() ? preparedSong.query
+                                                   : preparedSong.source;
+        _ctx.source = _trackSource;
       }
       do {
         FFmpegDecoder decoder(_ctx);
         decoder.Stream(preparedSong.preparedPath, preparedSong.query);
-      } while (_repeatSong.load() &&
-               !_ctx.playbackCtx->shouldStop.load());
+      } while (_repeatSong.load() && !_ctx.playbackCtx->shouldStop.load());
     } catch (const std::exception &error) {
       failed = !_ctx.playbackCtx->shouldStop.load();
       if (failed) {
@@ -296,6 +382,7 @@ void Mixer::startNext() {
     {
       std::lock_guard trackLock(_trackMtx);
       _trackName.clear();
+      _trackSource.clear();
     }
     {
       std::lock_guard metadataLock(_ctx.playbackCtx->metadataMtx);
@@ -311,7 +398,17 @@ void Mixer::startNext() {
 
     if (!failed && !_ctx.playbackCtx->shouldStop.load() &&
         _ctx.trackQueue->Empty()) {
-      dispatchResponse("Queue finished.");
+      bool loop = false;
+      {
+        std::lock_guard playlistLock(_playlistMtx);
+        loop = _playlistActive && _playlistLoop;
+        if (_playlistActive && !loop)
+          _playlistActive = false;
+      }
+      if (loop && queuePlaylistCycle())
+        dispatchResponse("Looping playlist: " + _playlistName);
+      else
+        dispatchResponse("Queue finished.");
     }
   });
 }

@@ -19,6 +19,7 @@ enum class Command {
   VOLUME,
   HISTORY,
   PLAYER,
+  PLAYLISTS,
   HELP,
   UNKNOWN
 };
@@ -28,16 +29,15 @@ Command StringToCommand(string command);
 class Cli {
 public:
   explicit Cli(std::unique_ptr<Mixer> &mixer,
-                std::function<void(bool)> switchTab = {});
+               std::function<void(std::size_t)> switchTab = {});
   void Execute(const string &line);
 
 private:
   vector<string> parseArgs(const string &input) const;
   static string joinQuery(const vector<string> &args);
 
-  atomic_bool _repeatRequested{false};
   std::unique_ptr<Mixer> &_mixer;
-  std::function<void(bool)> _switchTab;
+  std::function<void(std::size_t)> _switchTab;
 };
 
 } // namespace termify::core

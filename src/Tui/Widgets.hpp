@@ -74,13 +74,13 @@ public:
   std::optional<Point> Cursor() const override;
   std::optional<std::string> TakeSubmission();
   const std::string &Value() const;
+  void Clear();
 
 private:
   static std::size_t PreviousCharacter(std::string_view text,
                                        std::size_t cursor);
   static std::size_t NextCharacter(std::string_view text, std::size_t cursor);
-  static std::size_t CharacterCount(std::string_view text,
-                                    std::size_t end);
+  static std::size_t CharacterCount(std::string_view text, std::size_t end);
   static std::size_t ByteOffsetForCharacter(std::string_view text,
                                             std::size_t character);
   std::size_t VisibleStart() const;
@@ -90,6 +90,22 @@ private:
   std::string _value;
   std::size_t _cursor{0};
   std::deque<std::string> _submissions;
+};
+
+class Button : public Widget {
+public:
+  Button(std::string id, std::string label);
+  bool Focusable() const override { return true; }
+  void SetLabel(std::string label);
+  void SetPointer(std::optional<Point> point) override;
+  bool Handle(const Event &event) override;
+  void Render(Canvas &canvas) const override;
+  bool TakeActivation();
+
+private:
+  std::string _label;
+  bool _activated{false};
+  bool _hovered{false};
 };
 
 } // namespace termify::tui

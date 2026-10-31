@@ -18,9 +18,11 @@ int main() {
       "tabs", std::vector<std::string>{"PLAYER", "HISTORY"});
   auto &list = host.Emplace<ListView>("list");
   auto &input = host.Emplace<TextInput>("input");
+  auto &button = host.Emplace<Button>("button", "PLAY ALL");
   tabs.SetBounds({0, 0, 70, 3});
   list.SetBounds({0, 4, 50, 3});
   input.SetBounds({0, 8, 50, 1});
+  button.SetBounds({52, 8, 14, 1});
   CHECK(host.Focus("input"));
   host.Dispatch(MouseEvent{MouseButton::None, MouseAction::Move, 15, 1, {}});
   CHECK(tabs.Hovered() == 1 && tabs.Selected() == 0);
@@ -62,6 +64,8 @@ int main() {
                  {"4", "Fourth"}});
   CHECK(list.SelectedId() ==
         "2"); // New plays must not move the selected track.
+  CHECK(list.SelectId("3") && list.SelectedId() == "3");
+  CHECK(!list.SelectId("missing") && list.SelectedId() == "3");
   CHECK(host.Dispatch(KeyEvent{Key::End, {}, {}}));
   CHECK(list.SelectedId() == "4");
   CHECK(host.Dispatch(
@@ -76,6 +80,13 @@ int main() {
   CHECK(host.Focus("input"));
   CHECK(host.Dispatch(KeyEvent{Key::Character, "play", {}}));
   CHECK(input.Value() == "play");
+  CHECK(host.Dispatch(
+      MouseEvent{MouseButton::Left, MouseAction::Press, 54, 8, {}}));
+  CHECK(button.TakeActivation());
+  CHECK(!button.TakeActivation());
+  CHECK(host.Focus("button"));
+  CHECK(host.Dispatch(KeyEvent{Key::Enter, {}, {}}));
+  CHECK(button.TakeActivation());
   list.SetItems({});
   CHECK(!list.SelectedId());
   TabBar future("three-tabs", {"PLAYER", "HISTORY", "PLAYLISTS"});

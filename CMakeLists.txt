@@ -65,7 +65,8 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic)
   add_test(NAME tui_foundation COMMAND tui_foundation_tests)
 
-  add_executable(local_store_tests tests/LocalStoreTests.cpp src/Core/LocalStore.cpp)
+  add_executable(local_store_tests tests/LocalStoreTests.cpp
+    src/Core/LocalStore.cpp src/Core/SourceHash.cpp)
   target_include_directories(local_store_tests PRIVATE src)
   target_link_libraries(local_store_tests PRIVATE ${TERMIFY_SQLITE_TARGET})
   target_compile_options(local_store_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -78,7 +79,8 @@ if(BUILD_TESTING)
   add_test(NAME navigation COMMAND navigation_tests)
 
   add_executable(download_cache_tests tests/DownloadCacheTests.cpp
-    src/Core/AudioDownloader.cpp src/Core/LocalStore.cpp)
+    src/Core/AudioDownloader.cpp src/Core/LocalStore.cpp
+    src/Core/SourceHash.cpp)
   target_include_directories(download_cache_tests PRIVATE src)
   target_link_libraries(download_cache_tests PRIVATE ${TERMIFY_SQLITE_TARGET} PkgConfig::FFMPEG)
   target_compile_options(download_cache_tests PRIVATE -Wall -Wextra -Wpedantic)

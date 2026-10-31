@@ -37,6 +37,7 @@ public:
   void Render(Canvas &canvas) const override;
   std::optional<std::string> TakeActivation();
   std::optional<std::string> SelectedId() const;
+  bool SelectId(const std::string &id);
 
 private:
   std::size_t VisibleStart() const;

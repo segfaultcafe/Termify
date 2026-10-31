@@ -40,14 +40,12 @@ void Frame::Render(Canvas &canvas) const {
   canvas.Put({bounds.column, bounds.row}, "╭", _style);
   canvas.Put({bounds.column + bounds.width - 1, bounds.row}, "╮", _style);
   canvas.Put({bounds.column, bounds.row + bounds.height - 1}, "╰", _style);
-  canvas.Put({bounds.column + bounds.width - 1,
-              bounds.row + bounds.height - 1},
+  canvas.Put({bounds.column + bounds.width - 1, bounds.row + bounds.height - 1},
              "╯", _style);
-  canvas.HorizontalLine({bounds.column + 1, bounds.row}, bounds.width - 2,
-                        "─", _style);
-  canvas.HorizontalLine(
-      {bounds.column + 1, bounds.row + bounds.height - 1}, bounds.width - 2,
-      "─", _style);
+  canvas.HorizontalLine({bounds.column + 1, bounds.row}, bounds.width - 2, "─",
+                        _style);
+  canvas.HorizontalLine({bounds.column + 1, bounds.row + bounds.height - 1},
+                        bounds.width - 2, "─", _style);
   canvas.VerticalLine({bounds.column, bounds.row + 1}, bounds.height - 2, "│",
                       _style);
   canvas.VerticalLine({bounds.column + bounds.width - 1, bounds.row + 1},
@@ -100,8 +98,8 @@ void ProgressBar::Render(Canvas &canvas) const {
   const int barWidth = std::max(1, bounds.width - fixed);
   const int filled = static_cast<int>(_progress * barWidth);
   int column = bounds.column;
-  column += canvas.Text({column, bounds.row}, _leading + " [",
-                        {Color::Muted}, bounds.width);
+  column += canvas.Text({column, bounds.row}, _leading + " [", {Color::Muted},
+                        bounds.width);
   column += canvas.Text({column, bounds.row}, std::string(filled, ' '),
                         {Color::Cyan}, barWidth);
   for (int index = 0; index < barWidth; ++index) {
@@ -174,8 +172,8 @@ bool TextInput::Handle(const Event &event) {
 
 void TextInput::Render(Canvas &canvas) const {
   const auto &bounds = Bounds();
-  const int promptWidth = canvas.Spans({bounds.column, bounds.row}, _prompt,
-                                       bounds.width);
+  const int promptWidth =
+      canvas.Spans({bounds.column, bounds.row}, _prompt, bounds.width);
   const auto start = ByteOffsetForCharacter(_value, VisibleStart());
   canvas.Text({bounds.column + promptWidth, bounds.row},
               std::string_view(_value).substr(start), {},
@@ -192,9 +190,8 @@ std::optional<Point> TextInput::Cursor() const {
   const int relativeColumn =
       static_cast<int>(promptWidth) +
       static_cast<int>(CharacterCount(_value, _cursor) - visibleStart);
-  return Point{Bounds().column +
-                   std::clamp(relativeColumn, 0,
-                              std::max(0, Bounds().width - 1)),
+  return Point{Bounds().column + std::clamp(relativeColumn, 0,
+                                            std::max(0, Bounds().width - 1)),
                Bounds().row};
 }
 
@@ -207,6 +204,11 @@ std::optional<std::string> TextInput::TakeSubmission() {
 }
 
 const std::string &TextInput::Value() const { return _value; }
+void TextInput::Clear() {
+  _value.clear();
+  _cursor = 0;
+  _submissions.clear();
+}
 
 std::size_t TextInput::PreviousCharacter(std::string_view text,
                                          std::size_t cursor) {
@@ -232,8 +234,7 @@ std::size_t TextInput::NextCharacter(std::string_view text,
   return cursor;
 }
 
-std::size_t TextInput::CharacterCount(std::string_view text,
-                                      std::size_t end) {
+std::size_t TextInput::CharacterCount(std::string_view text, std::size_t end) {
   end = std::min(end, text.size());
   return static_cast<std::size_t>(std::count_if(
       text.begin(), text.begin() + static_cast<std::ptrdiff_t>(end),
@@ -255,8 +256,7 @@ std::size_t TextInput::VisibleStart() const {
   for (const auto &span : _prompt)
     promptWidth += Canvas::TextWidth(span.text);
   const int available =
-      Bounds().width -
-      std::min(Bounds().width, static_cast<int>(promptWidth));
+      Bounds().width - std::min(Bounds().width, static_cast<int>(promptWidth));
   if (available <= 0)
     return CharacterCount(_value, _cursor);
   const auto cursor = CharacterCount(_value, _cursor);
@@ -270,13 +270,53 @@ void TextInput::PlaceCursorFromMouse(int terminalColumn) {
     promptWidth += Canvas::TextWidth(span.text);
   promptWidth = std::min(promptWidth,
                          static_cast<std::size_t>(std::max(0, Bounds().width)));
-  const int requested =
-      std::max(0, terminalColumn - Bounds().column -
-                      static_cast<int>(promptWidth));
+  const int requested = std::max(0, terminalColumn - Bounds().column -
+                                        static_cast<int>(promptWidth));
   _cursor = ByteOffsetForCharacter(_value, VisibleStart());
   for (int index = 0; index < requested && _cursor < _value.size(); ++index) {
     _cursor = NextCharacter(_value, _cursor);
   }
 }
+
+Button::Button(std::string id, std::string label)
+    : Widget(std::move(id)), _label(std::move(label)) {}
+
+void Button::SetLabel(std::string label) { _label = std::move(label); }
+void Button::SetPointer(std::optional<Point> point) {
+  _hovered = point.has_value();
+}
+
+bool Button::Handle(const Event &event) {
+  if (const auto *mouse = std::get_if<MouseEvent>(&event)) {
+    if (mouse->action == MouseAction::Move)
+      return false;
+    if (mouse->action == MouseAction::Press &&
+        mouse->button == MouseButton::Left) {
+      _activated = true;
+      return true;
+    }
+    return false;
+  }
+  const auto *key = std::get_if<KeyEvent>(&event);
+  if (key && (key->key == Key::Enter ||
+              (key->key == Key::Character && key->text == " "))) {
+    _activated = true;
+    return true;
+  }
+  return false;
+}
+
+void Button::Render(Canvas &canvas) const {
+  const auto &bounds = Bounds();
+  const bool active = Focused() || _hovered;
+  const Style style{_hovered ? Color::Yellow
+                             : (Focused() ? Color::Cyan : Color::Muted),
+                    active};
+  canvas.Text({bounds.column, bounds.row},
+              Canvas::Clip("[ " + _label + " ]", bounds.width), style,
+              bounds.width);
+}
+
+bool Button::TakeActivation() { return std::exchange(_activated, false); }
 
 } // namespace termify::tui

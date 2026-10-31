@@ -99,11 +99,101 @@ int main() {
     LocalStore store(data, cache, 100);
     CHECK(!fs::exists(cache / "audio-orphan"));
   }
+  CHECK(LocalStore::SourceHash("abc") ==
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  const auto playlistData = root / "playlist-data";
+  const auto playlistCache = root / "playlist-cache";
+  {
+    LocalStore store(playlistData, playlistCache, 1000);
+    store.Record({0,
+                  "search words",
+                  "First title",
+                  "First artist",
+                  {},
+                  180,
+                  100,
+                  false});
+    auto first = store.StoreAudio("search words", audio,
+                                  "https://www.youtube.com/watch?v=first");
+    CHECK(first && first->source == "https://www.youtube.com/watch?v=first");
+    store.Record({0,
+                  "https://www.youtube.com/watch?v=second",
+                  "Second title",
+                  {},
+                  {},
+                  200,
+                  101,
+                  false});
+    auto second =
+        store.StoreAudio("https://www.youtube.com/watch?v=second", audio,
+                         "https://www.youtube.com/watch?v=second");
+    CHECK(second);
+    const auto history = store.History();
+    CHECK(history.size() == 2 && history[0].cached && history[1].cached);
+
+    const auto playlist = store.CreatePlaylist("Road trip");
+    CHECK(store.AddHistoryToPlaylist(playlist, history[1].id) ==
+          AddTrackResult::Added);
+    CHECK(store.AddHistoryToPlaylist(playlist, history[1].id) ==
+          AddTrackResult::Duplicate);
+    CHECK(store.AddHistoryToPlaylist(playlist, history[0].id) ==
+          AddTrackResult::Added);
+    auto tracks = store.PlaylistTracks(playlist);
+    CHECK(tracks.size() == 2);
+    CHECK(tracks[0].source == "https://www.youtube.com/watch?v=first");
+    CHECK(tracks[0].sourceHash == LocalStore::SourceHash(tracks[0].source));
+    CHECK(store.MovePlaylistTrack(playlist, tracks[1].id, -1));
+    tracks = store.PlaylistTracks(playlist);
+    CHECK(tracks[0].title == "Second title");
+    CHECK(store.SetPlaylistShuffle(playlist, true));
+    CHECK(store.SetPlaylistLoop(playlist, true));
+    CHECK(store.RenamePlaylist(playlist, "Night drive"));
+    const auto playlists = store.Playlists();
+    CHECK(playlists.size() == 1 && playlists[0].name == "Night drive");
+    CHECK(playlists[0].shuffle && playlists[0].loop &&
+          playlists[0].trackCount == 2);
+    CHECK(store.RemovePlaylistTrack(playlist, tracks[0].id));
+    CHECK(store.PlaylistTracks(playlist).size() == 1);
+  }
+  {
+    LocalStore reopened(playlistData, playlistCache, 1000);
+    const auto playlists = reopened.Playlists();
+    CHECK(playlists.size() == 1 && playlists[0].trackCount == 1);
+    const auto cached =
+        reopened.FindAudio("https://www.youtube.com/watch?v=first");
+    CHECK(cached && cached->source == "https://www.youtube.com/watch?v=first");
+    CHECK(reopened.DeletePlaylist(playlists[0].id));
+    CHECK(reopened.Playlists().empty());
+    CHECK(reopened.FindAudio("https://www.youtube.com/watch?v=first"));
+  }
+  const auto migrationData = root / "migration-data";
+  fs::create_directories(migrationData);
+  sqlite3 *migrationDatabase = nullptr;
+  CHECK(sqlite3_open((migrationData / "library.sqlite3").c_str(),
+                     &migrationDatabase) == SQLITE_OK);
+  CHECK(sqlite3_exec(
+            migrationDatabase,
+            "CREATE TABLE history (id INTEGER PRIMARY KEY,source TEXT NOT NULL,"
+            "title TEXT NOT NULL,artist TEXT NOT NULL,album TEXT NOT NULL,"
+            "duration INTEGER NOT NULL,played_at INTEGER NOT NULL);"
+            "CREATE TABLE audio_cache (source TEXT PRIMARY KEY,filename TEXT "
+            "UNIQUE NOT NULL,bytes INTEGER NOT NULL,touched INTEGER NOT NULL);"
+            "PRAGMA user_version=1;",
+            nullptr, nullptr, nullptr) == SQLITE_OK);
+  sqlite3_close(migrationDatabase);
+  {
+    LocalStore migrated(migrationData, root / "migration-cache", 1000);
+    CHECK(migrated.Playlists().empty());
+    auto cached = migrated.StoreAudio(
+        "old query", audio, "https://www.youtube.com/watch?v=migrated");
+    CHECK(cached &&
+          cached->source == "https://www.youtube.com/watch?v=migrated");
+  }
   // Refuse unknown schema versions rather than downgrading or deleting data.
   sqlite3 *database = nullptr;
   CHECK(sqlite3_open((data / "library.sqlite3").c_str(), &database) ==
         SQLITE_OK);
-  CHECK(sqlite3_exec(database, "PRAGMA user_version=2", nullptr, nullptr,
+  CHECK(sqlite3_exec(database, "PRAGMA user_version=3", nullptr, nullptr,
                      nullptr) == SQLITE_OK);
   sqlite3_close(database);
   bool rejected = false;

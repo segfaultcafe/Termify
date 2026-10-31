@@ -15,6 +15,12 @@ namespace fs = std::filesystem;
 int main(int argc, char **argv) {
   // Act as a deterministic downloader subprocess: no network or Python.
   if (argc > 1) {
+    for (int i = 1; i < argc; ++i) {
+      if (std::string(argv[i]) == "--skip-download") {
+        std::cout << "https://www.youtube.com/watch?v=resolved\n";
+        return 0;
+      }
+    }
     std::ofstream calls(std::getenv("TERMIFY_TEST_CALLS"), std::ios::app);
     calls << "download\n";
     for (int i = 1; i + 1 < argc; ++i) {
@@ -67,6 +73,7 @@ int main(int argc, char **argv) {
     cachedPath = first.path;
     const auto second = downloader.PrepareAudio("some song", nullptr, &store);
     CHECK(second.path == first.path && count() == 1);
+    CHECK(second.source == "https://www.youtube.com/watch?v=resolved");
   }
   {
     LocalStore reopened(root / "data", root / "cache");

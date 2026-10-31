@@ -15,7 +15,8 @@
 - Responsive, centered terminal interface with a live waveform
 - Title, artist, album, elapsed time, duration, and playback progress
 - Bounded 20-track queue with one-at-a-time background prefetching
-- Player and History tabs with keyboard navigation and mouse selection
+- Player, History, and Playlists tabs with keyboard and mouse controls
+- Persistent playlists built from previously heard, cached online tracks
 - Local play history and a bounded audio cache for replaying downloaded tracks
 - Pause, resume, skip, repeat, stop, and software volume control
 - Editable Unicode-aware input with cursor movement and deletion
@@ -134,6 +135,7 @@ Then enter commands at the `termify ›` prompt:
 | `volume +10` / `volume -10` | Adjust volume relative to its current level |
 | `queue` | Show the number of queued tracks |
 | `history` / `player` | Switch to the History or Player tab |
+| `playlists` | Open the playlist manager |
 | `clear` | Clear upcoming tracks |
 | `stop` | Stop playback and clear the queue |
 | `help` | Show the interactive command list |
@@ -161,6 +163,15 @@ next
   select a play. The mouse wheel scrolls and a click selects a row.
 - Press **Enter** on a selected history row to queue that song again. The
   `history` command opens the tab and focuses the list directly.
+- In History, choose **ADD TO PLAYLIST** (or press **A** while the list is
+  focused) to add the selected cached play to the playlist last selected in
+  the Playlists tab.
+- The Playlists tab has separate playlist and track lists. Click a row or use
+  the arrow keys, then use Tab/Shift+Tab to reach **NEW**, **RENAME**,
+  **DELETE**, **ADD CURRENT**, **REMOVE**, **MOVE UP/DOWN**, **PLAY ALL**,
+  **SHUFFLE**, and **LOOP**. Enter or Space activates a focused button.
+- New and renamed playlist names are entered at the bottom prompt; Escape
+  cancels the naming prompt. Deletion requires activating **DELETE** twice.
 
 ### Local history and cache
 
@@ -189,6 +200,22 @@ Absolute `XDG_DATA_HOME` and `XDG_CACHE_HOME` values override these base
 directories. SQLite runs inside Termify: no database server, SQLite command-line
 tool, Python, or account is required. If storage cannot be opened, playback
 continues without persistence and the interface reports the problem.
+
+### Playlists
+
+Playlists contain up to **20** tracks so playing one remains within Termify's
+bounded queue. A track can be added only after it has reached audio output,
+appears in History, and still has a valid cache entry. Termify stores a SHA-256
+identity for yt-dlp's canonical media URL plus its embedded title, artist,
+album, and duration. It never treats a newly typed search phrase as playlist
+truth and never copies audio into a playlist.
+
+**SHUFFLE** randomizes the order each time the playlist starts and for every
+new loop. **LOOP** repeats the whole playlist independently of the `repeat`
+command for one track. Starting a playlist disables single-track repeat.
+Removing a track or deleting a playlist does not delete cached audio. If a
+cache entry is later evicted, the saved canonical URL lets Termify fetch it
+again when the playlist is played.
 
 ## Build from source
 

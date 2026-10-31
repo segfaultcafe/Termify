@@ -16,6 +16,24 @@ constexpr tui::Style GREEN{tui::Color::Green};
 constexpr tui::Style YELLOW{tui::Color::Yellow};
 constexpr tui::Style RED{tui::Color::Red};
 constexpr tui::Style BOLD{tui::Color::Default, true};
+
+string addTrackMessage(core::AddTrackResult result) {
+  switch (result) {
+  case core::AddTrackResult::Added:
+    return "Added the cached track to the playlist.";
+  case core::AddTrackResult::HistoryNotFound:
+    return "Play the track before adding it to a playlist.";
+  case core::AddTrackResult::NotCached:
+    return "That history item is no longer cached; play it again first.";
+  case core::AddTrackResult::UnresolvedSource:
+    return "This older cache has no verified URL; play it again while online.";
+  case core::AddTrackResult::Duplicate:
+    return "That track is already in this playlist.";
+  case core::AddTrackResult::PlaylistFull:
+    return "A playlist can contain at most 20 tracks.";
+  }
+  return "Could not add the track.";
+}
 } // namespace
 
 Application::Application() {
@@ -24,30 +42,57 @@ Application::Application() {
                                    _ringBufferCtx.BUFFER_FRAMES);
   try {
     _store = std::make_unique<core::LocalStore>(
-        core::LocalStore::DefaultDataDirectory(), core::LocalStore::DefaultCacheDirectory());
+        core::LocalStore::DefaultDataDirectory(),
+        core::LocalStore::DefaultCacheDirectory());
   } catch (const std::exception &error) {
     _statusMessage = "Local storage unavailable: " + string(error.what());
     _statusIsError = true;
   }
-  _mixer = std::make_unique<core::Mixer>(
-      &_playbackCtx, &_ringBufferCtx, &_visualizationCtx, &_mResponseCtx,
-      &_trackQueue, _store.get());
-  _cli = std::make_unique<core::Cli>(_mixer, [this](bool history) {
+  _mixer = std::make_unique<core::Mixer>(&_playbackCtx, &_ringBufferCtx,
+                                         &_visualizationCtx, &_mResponseCtx,
+                                         &_trackQueue, _store.get());
+  _cli = std::make_unique<core::Cli>(_mixer, [this](std::size_t tab) {
     std::lock_guard lock(_widgetMtx);
-    _tabs->Select(history ? 1 : 0);
+    _tabs->Select(tab);
     applyView();
-    _widgets.Focus(history ? "history-list" : "command-input");
+    _widgets.Focus(tab == 1 ? "history-list"
+                            : (tab == 2 ? "playlist-list" : "command-input"));
     _historyRefresh.store(true);
+    _playlistRefresh.store(true);
   });
 
   _frame = &_widgets.Emplace<tui::Frame>("player-frame");
   _summary = &_widgets.Emplace<tui::Label>("playback-summary");
-  _tabs = &_widgets.Emplace<tui::TabBar>("tabs", std::vector<string>{"PLAYER", "HISTORY"});
+  _tabs = &_widgets.Emplace<tui::TabBar>(
+      "tabs", std::vector<string>{"PLAYER", "HISTORY", "PLAYLISTS"});
   _historyRule = &_widgets.Emplace<tui::Rule>("history-rule");
   _historyList = &_widgets.Emplace<tui::ListView>("history-list");
+  _historyAdd =
+      &_widgets.Emplace<tui::Button>("history-add", "ADD TO PLAYLIST");
   _historyRule->SetLabel("PLAY HISTORY");
-  _historyList->SetEmptyText(_store ? "No plays yet. Play a song to start your history."
-                                  : "Local storage is unavailable.");
+  _historyList->SetEmptyText(
+      _store ? "No plays yet. Play a song to start your history."
+             : "Local storage is unavailable.");
+  _playlistRule = &_widgets.Emplace<tui::Rule>("playlist-rule");
+  _playlistTrackRule = &_widgets.Emplace<tui::Rule>("playlist-track-rule");
+  _playlistList = &_widgets.Emplace<tui::ListView>("playlist-list");
+  _playlistTrackList = &_widgets.Emplace<tui::ListView>("playlist-track-list");
+  _playlistNew = &_widgets.Emplace<tui::Button>("playlist-new", "NEW");
+  _playlistRename = &_widgets.Emplace<tui::Button>("playlist-rename", "RENAME");
+  _playlistDelete = &_widgets.Emplace<tui::Button>("playlist-delete", "DELETE");
+  _playlistAddCurrent =
+      &_widgets.Emplace<tui::Button>("playlist-add-current", "ADD CURRENT");
+  _playlistRemove = &_widgets.Emplace<tui::Button>("playlist-remove", "REMOVE");
+  _playlistUp = &_widgets.Emplace<tui::Button>("playlist-up", "MOVE UP");
+  _playlistDown = &_widgets.Emplace<tui::Button>("playlist-down", "MOVE DOWN");
+  _playlistPlay = &_widgets.Emplace<tui::Button>("playlist-play", "PLAY ALL");
+  _playlistShuffle =
+      &_widgets.Emplace<tui::Button>("playlist-shuffle", "SHUFFLE OFF");
+  _playlistLoop = &_widgets.Emplace<tui::Button>("playlist-loop", "LOOP OFF");
+  _playlistRule->SetLabel("PLAYLISTS");
+  _playlistTrackRule->SetLabel("TRACKS");
+  _playlistList->SetEmptyText("No playlists. Choose NEW below.");
+  _playlistTrackList->SetEmptyText("This playlist has no tracks.");
   _nowPlayingRule = &_widgets.Emplace<tui::Rule>("now-playing-rule");
   _nowPlaying = &_widgets.Emplace<tui::Label>("now-playing");
   _details = &_widgets.Emplace<tui::Label>("track-details");
@@ -64,8 +109,8 @@ Application::Application() {
   _help = &_widgets.Emplace<tui::Label>("command-help");
   _input = &_widgets.Emplace<tui::TextInput>("command-input");
 
-  _frame->SetTitle({{" TERMIFY", CYAN_BOLD},
-                    {" ─ terminal audio player", MUTED}});
+  _frame->SetTitle(
+      {{" TERMIFY", CYAN_BOLD}, {" ─ terminal audio player", MUTED}});
   _nowPlayingRule->SetLabel("NOW PLAYING");
   _queueRule->SetLabel("UP NEXT");
   _waveformRule->SetLabel("LIVE WAVEFORM");
@@ -83,7 +128,8 @@ Application::~Application() {
 
 void Application::Start() {
   if (!core::YtDlpManager::Self().Init()) {
-    _statusMessage = "yt-dlp not found; local-file playback is still available.";
+    _statusMessage =
+        "yt-dlp not found; local-file playback is still available.";
     _statusIsError = true;
   }
 
@@ -127,8 +173,8 @@ void Application::runInteractiveInput() {
     }
 
     if (const auto *key = std::get_if<tui::KeyEvent>(&*event);
-        key && (key->key == tui::Key::Interrupt ||
-                key->key == tui::Key::EndOfInput)) {
+        key &&
+        (key->key == tui::Key::Interrupt || key->key == tui::Key::EndOfInput)) {
       _mixer->Shutdown();
       return;
     }
@@ -140,14 +186,24 @@ void Application::runInteractiveInput() {
 
     std::optional<string> submission;
     std::optional<string> replay;
+    std::optional<string> playlistReplay;
+    bool cancelPrompt = false;
+    bool createPlaylist = false, renamePlaylist = false;
+    bool deletePlaylist = false, addHistory = false, addCurrent = false;
+    bool removeTrack = false, moveUp = false, moveDown = false;
+    bool playPlaylist = false, toggleShuffle = false, toggleLoop = false;
     {
       std::lock_guard widgetLock(_widgetMtx);
       const auto oldTab = _tabs->Selected();
       const auto *key = std::get_if<tui::KeyEvent>(&*event);
-      if (key && key->key == tui::Key::Escape) {
+      if (key && key->key == tui::Key::Escape &&
+          _playlistPrompt != PlaylistPrompt::None) {
+        cancelPrompt = true;
+      } else if (key && key->key == tui::Key::Escape) {
         _widgets.Focus("command-input");
       } else if (key && key->modifiers.alt &&
-                 (key->key == tui::Key::ArrowLeft || key->key == tui::Key::ArrowRight)) {
+                 (key->key == tui::Key::ArrowLeft ||
+                  key->key == tui::Key::ArrowRight)) {
         _tabs->Handle(*event);
         _widgets.Focus("tabs");
       } else {
@@ -156,17 +212,85 @@ void Application::runInteractiveInput() {
       if (_tabs->Selected() != oldTab) {
         applyView();
         _historyRefresh.store(true);
+        _playlistRefresh.store(true);
       }
       if (const auto id = _historyList->TakeActivation()) {
         for (const auto &entry : _historyEntries) {
-          if (std::to_string(entry.id) == *id) { replay = entry.source; break; }
+          if (std::to_string(entry.id) == *id) {
+            replay = entry.source;
+            break;
+          }
         }
       }
+      if (const auto id = _playlistTrackList->TakeActivation()) {
+        for (const auto &track : _playlistTracks) {
+          if (std::to_string(track.id) == *id) {
+            playlistReplay = track.source;
+            break;
+          }
+        }
+      }
+      if (const auto selected = _playlistList->SelectedId()) {
+        try {
+          const auto id = std::stoll(*selected);
+          if (id != _selectedPlaylistId) {
+            _selectedPlaylistId = id;
+            _deleteConfirmationId = 0;
+            _playlistRefresh.store(true);
+          }
+        } catch (const std::exception &) {
+        }
+      }
+      createPlaylist = _playlistNew->TakeActivation();
+      renamePlaylist = _playlistRename->TakeActivation();
+      deletePlaylist = _playlistDelete->TakeActivation();
+      addHistory = _historyAdd->TakeActivation();
+      addCurrent = _playlistAddCurrent->TakeActivation();
+      removeTrack = _playlistRemove->TakeActivation();
+      moveUp = _playlistUp->TakeActivation();
+      moveDown = _playlistDown->TakeActivation();
+      playPlaylist = _playlistPlay->TakeActivation();
+      toggleShuffle = _playlistShuffle->TakeActivation();
+      toggleLoop = _playlistLoop->TakeActivation();
+      if (key && key->key == tui::Key::Character &&
+          (key->text == "a" || key->text == "A") &&
+          _widgets.FocusedId() == "history-list")
+        addHistory = true;
       submission = _input->TakeSubmission();
     }
-    if (replay) _mixer->AddToQueue(*replay);
-    if (submission && !submission->empty()) {
-      _cli->Execute(*submission);
+    if (cancelPrompt)
+      cancelPlaylistPrompt();
+    if (replay)
+      _mixer->AddToQueue(*replay);
+    if (playlistReplay)
+      _mixer->AddToQueue(*playlistReplay);
+    if (createPlaylist)
+      beginPlaylistPrompt(false);
+    if (renamePlaylist)
+      beginPlaylistPrompt(true);
+    if (deletePlaylist)
+      deleteSelectedPlaylist();
+    if (addHistory)
+      addHistorySelection();
+    if (addCurrent)
+      addCurrentTrack();
+    if (removeTrack)
+      removePlaylistTrack();
+    if (moveUp)
+      movePlaylistTrack(-1);
+    if (moveDown)
+      movePlaylistTrack(1);
+    if (playPlaylist)
+      playSelectedPlaylist();
+    if (toggleShuffle)
+      togglePlaylistShuffle();
+    if (toggleLoop)
+      togglePlaylistLoop();
+    if (submission) {
+      if (_playlistPrompt != PlaylistPrompt::None)
+        finishPlaylistPrompt(*submission);
+      else if (!submission->empty())
+        _cli->Execute(*submission);
     }
   }
 }
@@ -187,7 +311,24 @@ void Application::configureWidgets(int width) {
   _frame->SetBounds({0, 3, width, 16});
   _summary->SetBounds({3, 4, contentWidth, 1});
   _historyRule->SetBounds({0, 5, width, 1});
-  _historyList->SetBounds({3, 6, contentWidth, 9});
+  _historyList->SetBounds({3, 6, contentWidth, 8});
+  _historyAdd->SetBounds({3, 14, 22, 1});
+  const int playlistColumn = std::max(25, width / 3);
+  _playlistRule->SetBounds({0, 5, playlistColumn, 1});
+  _playlistTrackRule->SetBounds({playlistColumn, 5, width - playlistColumn, 1});
+  _playlistList->SetBounds({3, 6, playlistColumn - 5, 5});
+  _playlistTrackList->SetBounds(
+      {playlistColumn + 2, 6, width - playlistColumn - 5, 5});
+  _playlistNew->SetBounds({3, 11, 9, 1});
+  _playlistRename->SetBounds({13, 11, 12, 1});
+  _playlistDelete->SetBounds({26, 11, 12, 1});
+  _playlistAddCurrent->SetBounds({3, 12, 17, 1});
+  _playlistRemove->SetBounds({21, 12, 12, 1});
+  _playlistUp->SetBounds({34, 12, 13, 1});
+  _playlistDown->SetBounds({48, 12, 15, 1});
+  _playlistPlay->SetBounds({3, 14, 13, 1});
+  _playlistShuffle->SetBounds({17, 14, 17, 1});
+  _playlistLoop->SetBounds({35, 14, 14, 1});
   _nowPlayingRule->SetBounds({0, 5, width, 1});
   _nowPlaying->SetBounds({3, 6, contentWidth, 1});
   _details->SetBounds({3, 7, contentWidth, 1});
@@ -207,24 +348,41 @@ void Application::configureWidgets(int width) {
 
 void Application::applyView() {
   const bool history = _tabs->Selected() == 1;
+  const bool playlists = _tabs->Selected() == 2;
   _historyRule->SetVisible(history);
   _historyList->SetVisible(history);
-  for (auto *widget : std::vector<tui::Widget *>{_nowPlayingRule, _nowPlaying, _details,
-         _progress, _queueRule, _waveformRule, _waveform})
-    widget->SetVisible(!history);
-  for (auto *item : _queueItems) item->SetVisible(!history);
-  if (!history && _widgets.FocusedId() == "history-list") _widgets.Focus("tabs");
+  _historyAdd->SetVisible(history);
+  for (auto *widget : std::vector<tui::Widget *>{
+           _playlistRule, _playlistTrackRule, _playlistList, _playlistTrackList,
+           _playlistNew, _playlistRename, _playlistDelete, _playlistAddCurrent,
+           _playlistRemove, _playlistUp, _playlistDown, _playlistPlay,
+           _playlistShuffle, _playlistLoop})
+    widget->SetVisible(playlists);
+  for (auto *widget : std::vector<tui::Widget *>{
+           _nowPlayingRule, _nowPlaying, _details, _progress, _queueRule,
+           _waveformRule, _waveform})
+    widget->SetVisible(!history && !playlists);
+  for (auto *item : _queueItems)
+    item->SetVisible(!history && !playlists);
+  if (!history && _widgets.FocusedId() == "history-list")
+    _widgets.Focus("tabs");
+  if (!playlists && _widgets.FocusedId() &&
+      _widgets.FocusedId()->starts_with("playlist-"))
+    _widgets.Focus("tabs");
 }
 
 void Application::refreshHistory() {
-  if (!_store) return;
+  if (!_store)
+    return;
   {
     std::lock_guard lock(_widgetMtx);
-    if (_tabs->Selected() != 1) return;
+    if (_tabs->Selected() != 1)
+      return;
   }
   const auto now = std::chrono::steady_clock::now();
-  if (!_historyRefresh.exchange(false) && _historyRevision == _store->Revision() &&
-      now < _historyNextPoll) return;
+  if (!_historyRefresh.exchange(false) &&
+      _historyRevision == _store->Revision() && now < _historyNextPoll)
+    return;
   _historyNextPoll = now + std::chrono::seconds(5);
   try {
     const auto revision = _store->Revision();
@@ -236,17 +394,20 @@ void Application::refreshHistory() {
       localtime_r(&timestamp, &time);
       char date[32]{};
       std::strftime(date, sizeof(date), "%m/%d %H:%M", &time);
-      string label = string(date) + "  " + (entry.cached ? "[cache] " : "        ") +
-                     entry.title + (entry.artist.empty() ? "" : " — " + entry.artist);
-      label.erase(std::remove_if(label.begin(), label.end(), [](unsigned char ch) {
-        return ch < 32 || ch == 127;
-      }), label.end());
+      string label = string(date) + "  " +
+                     (entry.cached ? "[cache] " : "        ") + entry.title +
+                     (entry.artist.empty() ? "" : " — " + entry.artist);
+      label.erase(
+          std::remove_if(label.begin(), label.end(),
+                         [](unsigned char ch) { return ch < 32 || ch == 127; }),
+          label.end());
       items.push_back({std::to_string(entry.id), std::move(label)});
     }
     std::lock_guard lock(_widgetMtx);
     _historyEntries = std::move(entries);
     _historyList->SetItems(std::move(items));
-    _historyRule->SetLabel("PLAY HISTORY · " + std::to_string(_historyEntries.size()) +
+    _historyRule->SetLabel("PLAY HISTORY · " +
+                           std::to_string(_historyEntries.size()) +
                            (_historyEntries.size() == 1 ? " play" : " plays"));
     _historyRevision = revision;
   } catch (const std::exception &error) {
@@ -255,26 +416,368 @@ void Application::refreshHistory() {
   }
 }
 
+void Application::refreshPlaylists() {
+  if (!_store)
+    return;
+  {
+    std::lock_guard lock(_widgetMtx);
+    if (_tabs->Selected() != 2)
+      return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (!_playlistRefresh.exchange(false) &&
+      _playlistRevision == _store->Revision() && now < _playlistNextPoll)
+    return;
+  _playlistNextPoll = now + std::chrono::seconds(5);
+  try {
+    const auto revision = _store->Revision();
+    auto playlists = _store->Playlists();
+    auto selectedId = _selectedPlaylistId;
+    if (std::none_of(
+            playlists.begin(), playlists.end(),
+            [selectedId](const auto &item) { return item.id == selectedId; }))
+      selectedId = playlists.empty() ? 0 : playlists.front().id;
+    auto tracks = selectedId ? _store->PlaylistTracks(selectedId)
+                             : std::vector<core::PlaylistTrack>{};
+
+    std::vector<tui::ListItem> playlistItems;
+    for (const auto &playlist : playlists) {
+      string modes;
+      if (playlist.shuffle)
+        modes += " ↝";
+      if (playlist.loop)
+        modes += " ↻";
+      playlistItems.push_back({std::to_string(playlist.id),
+                               playlist.name + " · " +
+                                   std::to_string(playlist.trackCount) +
+                                   modes});
+    }
+    std::vector<tui::ListItem> trackItems;
+    for (const auto &track : tracks) {
+      string label = track.cached ? "[cache] " : "[miss]  ";
+      label += track.title;
+      if (!track.artist.empty())
+        label += " — " + track.artist;
+      label.erase(
+          std::remove_if(label.begin(), label.end(),
+                         [](unsigned char ch) { return ch < 32 || ch == 127; }),
+          label.end());
+      trackItems.push_back({std::to_string(track.id), std::move(label)});
+    }
+
+    std::lock_guard lock(_widgetMtx);
+    _selectedPlaylistId = selectedId;
+    _playlists = std::move(playlists);
+    _playlistTracks = std::move(tracks);
+    _playlistList->SetItems(std::move(playlistItems));
+    if (_selectedPlaylistId)
+      _playlistList->SelectId(std::to_string(_selectedPlaylistId));
+    _playlistTrackList->SetItems(std::move(trackItems));
+    const auto selected = std::find_if(
+        _playlists.begin(), _playlists.end(),
+        [this](const auto &item) { return item.id == _selectedPlaylistId; });
+    _playlistRule->SetLabel("PLAYLISTS · " + std::to_string(_playlists.size()));
+    _playlistTrackRule->SetLabel(
+        selected == _playlists.end()
+            ? "TRACKS"
+            : selected->name + " · " + std::to_string(selected->trackCount));
+    _playlistShuffle->SetLabel(selected != _playlists.end() && selected->shuffle
+                                   ? "SHUFFLE ON"
+                                   : "SHUFFLE OFF");
+    _playlistLoop->SetLabel(selected != _playlists.end() && selected->loop
+                                ? "LOOP ON"
+                                : "LOOP OFF");
+    _playlistRevision = revision;
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not read playlists: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+std::optional<core::Playlist> Application::selectedPlaylist() {
+  std::lock_guard lock(_widgetMtx);
+  const auto selected = std::find_if(
+      _playlists.begin(), _playlists.end(),
+      [this](const auto &item) { return item.id == _selectedPlaylistId; });
+  return selected == _playlists.end()
+             ? std::nullopt
+             : std::optional<core::Playlist>(*selected);
+}
+
+void Application::beginPlaylistPrompt(bool rename) {
+  if (!_store) {
+    _statusMessage = "Local storage is unavailable.";
+    _statusIsError = true;
+    return;
+  }
+  auto playlist = selectedPlaylist();
+  if (rename && !playlist) {
+    _statusMessage = "Select a playlist to rename.";
+    _statusIsError = true;
+    return;
+  }
+  std::lock_guard lock(_widgetMtx);
+  _playlistPrompt = rename ? PlaylistPrompt::Rename : PlaylistPrompt::Create;
+  _promptPlaylistId = rename ? playlist->id : 0;
+  _input->Clear();
+  _input->SetPrompt(
+      {{rename ? "rename playlist" : "new playlist", CYAN_BOLD}, {" › ", {}}});
+  _widgets.Focus("command-input");
+  _statusMessage = rename ? "Type the new playlist name and press Enter."
+                          : "Type a playlist name and press Enter.";
+  _statusIsError = false;
+}
+
+void Application::finishPlaylistPrompt(const string &name) {
+  const auto prompt = _playlistPrompt;
+  const auto playlistId = _promptPlaylistId;
+  try {
+    if (prompt == PlaylistPrompt::Create) {
+      const auto id = _store->CreatePlaylist(name);
+      {
+        std::lock_guard lock(_widgetMtx);
+        _selectedPlaylistId = id;
+      }
+      _statusMessage = "Playlist created.";
+    } else if (prompt == PlaylistPrompt::Rename) {
+      if (!_store->RenamePlaylist(playlistId, name))
+        throw std::runtime_error("Playlist no longer exists");
+      _statusMessage = "Playlist renamed.";
+    } else {
+      return;
+    }
+    _statusIsError = false;
+    cancelPlaylistPrompt();
+    _playlistRefresh.store(true);
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not save playlist name: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::cancelPlaylistPrompt() {
+  std::lock_guard lock(_widgetMtx);
+  _playlistPrompt = PlaylistPrompt::None;
+  _promptPlaylistId = 0;
+  _input->Clear();
+  _input->SetPrompt({{"termify", CYAN_BOLD}, {" › ", {}}});
+  if (_tabs->Selected() == 2)
+    _widgets.Focus("playlist-list");
+}
+
+void Application::addHistorySelection() {
+  if (!_store)
+    return;
+  auto playlist = selectedPlaylist();
+  std::int64_t historyId = 0;
+  {
+    std::lock_guard lock(_widgetMtx);
+    if (const auto selected = _historyList->SelectedId()) {
+      try {
+        historyId = std::stoll(*selected);
+      } catch (const std::exception &) {
+      }
+    }
+  }
+  if (!playlist || !historyId) {
+    _statusMessage = playlist ? "Select a history item first."
+                              : "Create or select a playlist first.";
+    _statusIsError = true;
+    return;
+  }
+  try {
+    const auto result = _store->AddHistoryToPlaylist(playlist->id, historyId);
+    _statusMessage = addTrackMessage(result);
+    _statusIsError = result != core::AddTrackResult::Added;
+    _playlistRefresh.store(true);
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not add track: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::addCurrentTrack() {
+  if (!_store)
+    return;
+  const auto playlist = selectedPlaylist();
+  const auto source = _mixer->CurrentSource();
+  if (!playlist || source.empty()) {
+    _statusMessage = playlist ? "Nothing heard is currently playing."
+                              : "Select a playlist first.";
+    _statusIsError = true;
+    return;
+  }
+  core::TrackMetadata metadata;
+  {
+    std::lock_guard lock(_playbackCtx.metadataMtx);
+    metadata = _playbackCtx.metadata;
+  }
+  try {
+    const auto result = _store->AddSourceToPlaylist(
+        playlist->id,
+        {0, source, metadata.title, metadata.artist, metadata.album,
+         static_cast<std::int64_t>(_playbackCtx.durationFrames.load() / 44100),
+         0, false});
+    _statusMessage = addTrackMessage(result);
+    _statusIsError = result != core::AddTrackResult::Added;
+    _playlistRefresh.store(true);
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not add current track: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::removePlaylistTrack() {
+  auto playlist = selectedPlaylist();
+  std::int64_t entryId = 0;
+  {
+    std::lock_guard lock(_widgetMtx);
+    if (const auto selected = _playlistTrackList->SelectedId()) {
+      try {
+        entryId = std::stoll(*selected);
+      } catch (const std::exception &) {
+      }
+    }
+  }
+  if (!playlist || !entryId) {
+    _statusMessage = "Select a playlist track to remove.";
+    _statusIsError = true;
+    return;
+  }
+  try {
+    if (_store->RemovePlaylistTrack(playlist->id, entryId)) {
+      _statusMessage = "Track removed from playlist.";
+      _statusIsError = false;
+      _playlistRefresh.store(true);
+    }
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not remove track: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::movePlaylistTrack(int direction) {
+  auto playlist = selectedPlaylist();
+  std::int64_t entryId = 0;
+  {
+    std::lock_guard lock(_widgetMtx);
+    if (const auto selected = _playlistTrackList->SelectedId()) {
+      try {
+        entryId = std::stoll(*selected);
+      } catch (const std::exception &) {
+      }
+    }
+  }
+  if (!playlist || !entryId ||
+      !_store->MovePlaylistTrack(playlist->id, entryId, direction)) {
+    _statusMessage = "The selected track cannot move farther.";
+    _statusIsError = true;
+    return;
+  }
+  _statusMessage = direction < 0 ? "Track moved up." : "Track moved down.";
+  _statusIsError = false;
+  _playlistRefresh.store(true);
+}
+
+void Application::playSelectedPlaylist() {
+  const auto playlist = selectedPlaylist();
+  vector<string> sources;
+  {
+    std::lock_guard lock(_widgetMtx);
+    for (const auto &track : _playlistTracks)
+      sources.push_back(track.source);
+  }
+  if (!playlist) {
+    _statusMessage = "Select a playlist first.";
+    _statusIsError = true;
+    return;
+  }
+  _mixer->StartPlaylist(std::move(sources), playlist->name, playlist->shuffle,
+                        playlist->loop);
+}
+
+void Application::togglePlaylistShuffle() {
+  const auto playlist = selectedPlaylist();
+  if (!playlist)
+    return;
+  try {
+    _store->SetPlaylistShuffle(playlist->id, !playlist->shuffle);
+    _statusMessage = playlist->shuffle ? "Playlist shuffle disabled."
+                                       : "Playlist shuffle enabled.";
+    _statusIsError = false;
+    _playlistRefresh.store(true);
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not change shuffle: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::togglePlaylistLoop() {
+  const auto playlist = selectedPlaylist();
+  if (!playlist)
+    return;
+  try {
+    _store->SetPlaylistLoop(playlist->id, !playlist->loop);
+    _statusMessage =
+        playlist->loop ? "Playlist loop disabled." : "Playlist loop enabled.";
+    _statusIsError = false;
+    _playlistRefresh.store(true);
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not change playlist loop: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::deleteSelectedPlaylist() {
+  const auto playlist = selectedPlaylist();
+  if (!playlist)
+    return;
+  if (_deleteConfirmationId != playlist->id) {
+    _deleteConfirmationId = playlist->id;
+    _statusMessage = "Choose DELETE again to remove '" + playlist->name + "'.";
+    _statusIsError = true;
+    return;
+  }
+  try {
+    _store->DeletePlaylist(playlist->id);
+    {
+      std::lock_guard lock(_widgetMtx);
+      _selectedPlaylistId = 0;
+      _deleteConfirmationId = 0;
+    }
+    _statusMessage = "Playlist deleted; cached audio was kept.";
+    _statusIsError = false;
+    _playlistRefresh.store(true);
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not delete playlist: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
 void Application::renderUi() {
   readLatestMessage();
   if (_store) {
     const auto error = _store->TakeError();
-    if (!error.empty()) { _statusMessage = "Could not save history: " + error; _statusIsError = true; }
+    if (!error.empty()) {
+      _statusMessage = "Could not save history: " + error;
+      _statusIsError = true;
+    }
   }
   refreshHistory();
+  refreshPlaylists();
 
   const int columns = terminalWidth();
   const int rows = terminalHeight();
-  if (columns < 42 || rows < 20) {
+  if (columns < 68 || rows < 20) {
     std::lock_guard outputLock(_visualizationCtx.coutMtx);
     std::cout << "\033[2J";
     tui::Canvas notice(std::max(1, columns - 1), std::max(1, rows - 1));
-    notice.Text({0, 0}, "Resize terminal to at least 42 x 20", YELLOW);
+    notice.Text({0, 0}, "Resize terminal to at least 68 x 20", YELLOW);
     notice.Present(std::cout, {1, 1});
     _lastUiWidth = 0;
     return;
   }
-  const int width = std::min(120, std::max(40, columns - 4));
+  const int width = std::min(120, std::max(64, columns - 4));
   const int left = std::max(1, (columns - width) / 2 + 1);
   const int top = std::max(1, (rows - 20) / 2 + 1);
   _visualizationCtx.uiLeftColumn.store(left);
@@ -292,15 +795,15 @@ void Application::renderUi() {
     metadata = _playbackCtx.metadata;
   }
 
-  const string state = loading ? "LOADING" :
-                       (paused ? "PAUSED" : (playing ? "PLAYING" : "IDLE"));
+  const string state =
+      loading ? "LOADING"
+              : (paused ? "PAUSED" : (playing ? "PLAYING" : "IDLE"));
   const tui::Style stateStyle =
       loading ? YELLOW : (paused ? YELLOW : (playing ? GREEN : MUTED));
   const string repeat = _mixer->IsRepeatOn() ? "ON" : "OFF";
-  const string nowPlaying = track.empty()
-                                ? "Nothing playing"
-                                : (metadata.title.empty() ? track
-                                                          : metadata.title);
+  const string nowPlaying =
+      track.empty() ? "Nothing playing"
+                    : (metadata.title.empty() ? track : metadata.title);
   string details;
   if (loading) {
     details = "Fetching audio and metadata...";
@@ -322,11 +825,11 @@ void Application::renderUi() {
 
   std::lock_guard widgetLock(_widgetMtx);
   configureWidgets(width);
-  _summary->SetSpans({{"● " + state, stateStyle},
-                      {"    QUEUE " + std::to_string(queueSize) +
-                           "    REPEAT " + repeat + "    VOL " +
-                           std::to_string(_mixer->Volume()) + "%",
-                       MUTED}});
+  _summary->SetSpans(
+      {{"● " + state, stateStyle},
+       {"    QUEUE " + std::to_string(queueSize) + "    REPEAT " + repeat +
+            "    VOL " + std::to_string(_mixer->Volume()) + "%",
+        MUTED}});
   _nowPlaying->SetText(tui::Canvas::Clip(nowPlaying, contentWidth), BOLD);
   _details->SetText(tui::Canvas::Clip(details, contentWidth), MUTED);
   _progress->SetProgress(ratio);
@@ -364,12 +867,16 @@ void Application::renderUi() {
   _status->SetSpans(
       {{_statusIsError ? "! " : "› ", statusStyle},
        {tui::Canvas::Clip(_statusMessage, contentWidth - 2), statusStyle}});
-  _help->SetText(tui::Canvas::Clip(
-                     _tabs->Selected() == 1
-                       ? "↑↓ select · Enter queue · Tab focus · Esc prompt"
-                       : "Click tabs · Alt+←/→ switch · Tab focus · help: commands",
-                     contentWidth),
-                 MUTED);
+  _help->SetText(
+      tui::Canvas::Clip(
+          _tabs->Selected() == 1
+              ? "↑↓ select · Enter queue · A/add button → selected playlist"
+          : _tabs->Selected() == 2
+              ? "Click/select lists · Tab reaches every action · Enter "
+                "activates"
+              : "Click tabs · Alt+←/→ switch · Tab focus · help: commands",
+          contentWidth),
+      MUTED);
 
   tui::Canvas canvas(width, 20);
   _widgets.Render(canvas);
@@ -383,7 +890,6 @@ void Application::renderUi() {
   }
   canvas.Present(std::cout, {left, top}, _widgets.Cursor());
   return;
-
 }
 
 string Application::formatDuration(uint64 frames) {
@@ -401,7 +907,6 @@ string Application::formatDuration(uint64 frames) {
   return output.str();
 }
 
-
 void Application::readLatestMessage() {
   std::lock_guard lock(_mResponseCtx.resMtx);
   while (!_mResponseCtx.responses.empty()) {
@@ -412,10 +917,9 @@ void Application::readLatestMessage() {
   }
 }
 
-
 string Application::buildWaveform(std::size_t width) {
   static constexpr const char *levels[] = {"·", "▁", "▂", "▃", "▄",
-                                            "▅", "▆", "▇", "█"};
+                                           "▅", "▆", "▇", "█"};
   vector<int> peaks(width, 0);
   int globalPeak = 0;
 
@@ -427,8 +931,8 @@ string Application::buildWaveform(std::size_t width) {
       const std::size_t end =
           (column + 1) * _visualizationCtx.visBuffer.size() / width;
       for (std::size_t index = begin; index < end; ++index) {
-        const int sample = std::abs(static_cast<int>(
-            _visualizationCtx.visBuffer[index]));
+        const int sample =
+            std::abs(static_cast<int>(_visualizationCtx.visBuffer[index]));
         peaks[column] = std::max(peaks[column], sample);
       }
       globalPeak = std::max(globalPeak, peaks[column]);
@@ -442,7 +946,6 @@ string Application::buildWaveform(std::size_t width) {
   }
   return output;
 }
-
 
 int Application::terminalWidth() {
   winsize size{};

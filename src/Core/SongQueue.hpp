@@ -13,6 +13,7 @@ enum class QueueState { Pending, Downloading, Ready, Failed };
 struct QueuedSong {
   uint64 id{0};
   string query;
+  string source;
   QueueState state{QueueState::Pending};
   string preparedPath;
   bool temporary{false};
@@ -27,7 +28,7 @@ public:
   std::optional<uint64> Push(string song);
   std::optional<QueuedSong> PopForPlayback();
   std::optional<QueuedSong> ClaimForPrefetch();
-  bool MarkReady(uint64 id, string path, bool temporary,
+  bool MarkReady(uint64 id, string path, string source, bool temporary,
                  std::shared_ptr<CacheLease> lease = {});
   bool MarkFailed(uint64 id, string error);
   vector<QueuedSong> Snapshot(std::size_t limit = 3) const;

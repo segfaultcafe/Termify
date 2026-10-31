@@ -37,16 +37,18 @@ std::optional<QueuedSong> SongQueue::ClaimForPrefetch() {
   return std::nullopt;
 }
 
-bool SongQueue::MarkReady(uint64 id, string path, bool temporary,
+bool SongQueue::MarkReady(uint64 id, string path, string source, bool temporary,
                           std::shared_ptr<CacheLease> lease) {
   std::lock_guard lock(_queueMtx);
-  const auto song = std::find_if(_queue.begin(), _queue.end(),
-                                 [id](const auto &item) { return item.id == id; });
+  const auto song =
+      std::find_if(_queue.begin(), _queue.end(),
+                   [id](const auto &item) { return item.id == id; });
   if (song == _queue.end()) {
     return false;
   }
   song->state = QueueState::Ready;
   song->preparedPath = std::move(path);
+  song->source = std::move(source);
   song->temporary = temporary;
   song->cacheLease = std::move(lease);
   song->error.clear();
@@ -55,8 +57,9 @@ bool SongQueue::MarkReady(uint64 id, string path, bool temporary,
 
 bool SongQueue::MarkFailed(uint64 id, string error) {
   std::lock_guard lock(_queueMtx);
-  const auto song = std::find_if(_queue.begin(), _queue.end(),
-                                 [id](const auto &item) { return item.id == id; });
+  const auto song =
+      std::find_if(_queue.begin(), _queue.end(),
+                   [id](const auto &item) { return item.id == id; });
   if (song == _queue.end()) {
     return false;
   }

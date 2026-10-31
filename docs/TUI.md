@@ -15,14 +15,21 @@ not write ANSI positioning, color, border, or mouse-mode sequences directly.
    and moves focus spatially with arrow keys.
 
 The current screen is composed from `Frame`, `Rule`, `Label`, `ProgressBar`,
-`TextInput`, `TabBar`, and `ListView` widgets. Player and History share the frame,
-status, and command prompt. Playlists and future controls should build on the
-same primitives or introduce another focused widget type.
+`TextInput`, `Button`, `TabBar`, and `ListView` widgets. Player, History, and
+Playlists share the frame, status, and command prompt. Playlist actions are
+ordinary focusable buttons, so the same operation is available to mouse and
+keyboard users.
 
 `TabBar` owns selection, arrow-key navigation, and tab hit testing. `ListView`
 owns a scrollable selection, keyboard/mouse navigation, and an activation event
 consumed by the application. Stable item IDs preserve the selected play when
 new rows arrive. Widgets receive display data, not database or mixer objects.
+
+The Playlists view presents one list for playlists and another for ordered
+tracks. Naming temporarily changes the shared command prompt; it does not add
+text editing to list widgets. History's add button targets the playlist last
+selected in the Playlists view. Application code translates action activations
+into `LocalStore` operations and refreshes widgets from storage revisions.
 
 The three-row file-style tab strip sits above the shared player frame. Its
 active marker, bordered inactive tabs, hover color, and inline navigation hint
@@ -84,10 +91,12 @@ is a future improvement.
 ## Persistent library boundary
 
 `LocalStore` owns an embedded SQLite connection, versioned schema, bounded play
-history, and the disk-cache index. The audio output thread enqueues a history
-record after its first successful write; a separate writer performs database
-I/O. The UI polls for revisions while History is visible and periodically
-refreshes to see changes from other instances.
+history, playlists, and the disk-cache index. Playlist entries reference a
+SHA-256 of the canonical media URL and keep metadata in a normalized library
+table; they never own or delete cache files. The audio output thread enqueues a
+history record after its first successful write; a separate writer performs
+database I/O. The UI polls for revisions while persistent views are visible and
+periodically refreshes to see changes from other instances.
 
 The downloader consults the cache before fetching. Shared cache leases travel
 with prepared audio through the queue and playback; advisory file locks prevent

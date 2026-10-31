@@ -24,6 +24,31 @@ struct HistoryEntry {
   bool cached{false};
 };
 
+struct Playlist {
+  std::int64_t id{0};
+  std::string name;
+  bool shuffle{false};
+  bool loop{false};
+  std::size_t trackCount{0};
+};
+
+struct PlaylistTrack {
+  std::int64_t id{0};
+  std::string sourceHash, source, title, artist, album;
+  std::int64_t durationSeconds{0};
+  int position{0};
+  bool cached{false};
+};
+
+enum class AddTrackResult {
+  Added,
+  HistoryNotFound,
+  NotCached,
+  UnresolvedSource,
+  Duplicate,
+  PlaylistFull,
+};
+
 // Shared by the queue and decoder. An advisory lock prevents eviction while
 // any Termify process still has this cached file queued or playing.
 struct CacheLease {
@@ -36,6 +61,9 @@ struct CacheLease {
 
 struct CachedAudio {
   std::string path;
+  // The canonical media URL reported by yt-dlp. Old cache rows fall back to
+  // the original query so upgrades remain playable.
+  std::string source;
   std::shared_ptr<CacheLease> lease;
 };
 
@@ -43,6 +71,7 @@ class LocalStore {
 public:
   static constexpr std::uint64_t CACHE_LIMIT = 256ULL * 1024 * 1024;
   static constexpr int HISTORY_LIMIT = 1000;
+  static constexpr int PLAYLIST_TRACK_LIMIT = 20;
   static std::filesystem::path DefaultDataDirectory();
   static std::filesystem::path DefaultCacheDirectory();
 
@@ -58,8 +87,27 @@ public:
   std::string TakeError();
   std::vector<HistoryEntry> History();
   std::optional<CachedAudio> FindAudio(const std::string &source);
-  std::optional<CachedAudio> StoreAudio(const std::string &source,
-                                        const std::filesystem::path &file);
+  std::optional<CachedAudio>
+  StoreAudio(const std::string &source, const std::filesystem::path &file,
+             const std::string &canonicalSource = {});
+  bool UpdateCachedSource(const std::string &source,
+                          const std::string &canonicalSource);
+  static std::string SourceHash(const std::string &source);
+
+  std::vector<Playlist> Playlists();
+  std::vector<PlaylistTrack> PlaylistTracks(std::int64_t playlistId);
+  std::int64_t CreatePlaylist(const std::string &name);
+  bool RenamePlaylist(std::int64_t playlistId, const std::string &name);
+  bool DeletePlaylist(std::int64_t playlistId);
+  bool SetPlaylistShuffle(std::int64_t playlistId, bool enabled);
+  bool SetPlaylistLoop(std::int64_t playlistId, bool enabled);
+  AddTrackResult AddHistoryToPlaylist(std::int64_t playlistId,
+                                      std::int64_t historyId);
+  AddTrackResult AddSourceToPlaylist(std::int64_t playlistId,
+                                     const HistoryEntry &track);
+  bool RemovePlaylistTrack(std::int64_t playlistId, std::int64_t entryId);
+  bool MovePlaylistTrack(std::int64_t playlistId, std::int64_t entryId,
+                         int direction);
   std::uint64_t Revision() const { return _revision.load(); }
 
 private:

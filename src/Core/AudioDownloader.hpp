@@ -8,6 +8,7 @@ namespace termify::core {
 
 struct PreparedAudio {
   string path;
+  string source;
   bool temporary{false};
   std::shared_ptr<CacheLease> cacheLease;
 };
@@ -25,6 +26,14 @@ public:
                              const atomic_bool *cancel = nullptr);
 
 private:
+  struct DownloadedAudio {
+    string path;
+    string source;
+  };
+  DownloadedAudio download(const string &query,
+                           const atomic_bool *cancel = nullptr);
+  string resolveSource(const string &query,
+                       const atomic_bool *cancel = nullptr);
   YtDlpManager() = default;
 
   std::filesystem::path getGlobalLocation();

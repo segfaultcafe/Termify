@@ -213,4 +213,14 @@ std::optional<std::string> ListView::SelectedId() const {
                         : std::optional<std::string>(_items[_selected].id);
 }
 
+bool ListView::SelectId(const std::string &id) {
+  const auto found =
+      std::find_if(_items.begin(), _items.end(),
+                   [&id](const auto &item) { return item.id == id; });
+  if (found == _items.end())
+    return false;
+  _selected = static_cast<std::size_t>(found - _items.begin());
+  return true;
+}
+
 } // namespace termify::tui
