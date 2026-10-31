@@ -175,6 +175,10 @@ make install    # build, test, and install to /usr/local/bin
 its SHA-256 digest, and includes it in the archive. This packaging step requires
 network access; ordinary source builds do not.
 
+The terminal interface is composed from reusable, keyboard- and mouse-aware
+widgets. See [docs/TUI.md](docs/TUI.md) before adding or changing interface
+components.
+
 ## Platform status
 
 Termify currently supports Linux. Windows support is planned around a

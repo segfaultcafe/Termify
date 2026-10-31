@@ -73,6 +73,27 @@ terminal or system in a broken state.
 - **v1.0 — Supported release:** meet every release gate above and publish a
   documented compatibility and stability promise.
 
+## Next goal after the TUI foundation
+
+Add a dedicated animated cassette widget between **UP NEXT** and
+**LIVE WAVEFORM**.
+
+- Draw two reels connected by a tape path using the shared widget and canvas
+  APIs.
+- Derive reel fill from normalized playback progress: the left reel gradually
+  shrinks while the right reel grows from the beginning to the end of a track.
+- Advance a subtle rotation phase from elapsed playback time so movement is
+  slow and continuous, freezes while paused, and catches up correctly after a
+  seek.
+- Keep the animation decorative and independent from the decoder and mixer.
+- Provide a compact representation or hide decorative detail when the terminal
+  is too narrow or short.
+- Test deterministic frames at 0%, 50%, and 100% progress, plus pause, resume,
+  seek, and unknown-duration states.
+
+The cassette layout and visual language will be designed after the widget
+foundation is merged, in a separate feature branch.
+
 ## Not required for v1
 
 Windows support, account login, cloud library synchronization, plugins, and a

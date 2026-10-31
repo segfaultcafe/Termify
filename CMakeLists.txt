@@ -45,4 +45,16 @@ if(BUILD_TESTING)
   target_include_directories(song_queue_tests PRIVATE src/Core)
   target_compile_options(song_queue_tests PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME song_queue COMMAND song_queue_tests)
+
+  add_executable(tui_foundation_tests
+    tests/TuiFoundationTests.cpp
+    src/Tui/Canvas.cpp
+    src/Tui/InputDecoder.cpp
+    src/Tui/Widget.cpp
+    src/Tui/Widgets.cpp
+  )
+  target_include_directories(tui_foundation_tests PRIVATE src)
+  target_compile_options(tui_foundation_tests PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME tui_foundation COMMAND tui_foundation_tests)
 endif()
