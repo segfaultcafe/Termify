@@ -16,6 +16,7 @@
 - Title, artist, album, elapsed time, duration, and playback progress
 - Bounded 20-track queue with one-at-a-time background prefetching
 - Player, History, and Playlists tabs with keyboard and mouse controls
+- Clickable ASCII playback controls alongside the command prompt
 - Persistent playlists built from previously heard, cached online tracks
 - Local play history and a bounded audio cache for replaying downloaded tracks
 - Pause, resume, skip, repeat, stop, and software volume control
@@ -23,9 +24,11 @@
 - Clean cancellation, temporary-file cleanup, and readable error messages
 - Self-contained online fetching: no Python or separate yt-dlp installation
 
-Coming in **v0.3.1**: playlist playback now advances correctly with `next`,
-playlist loops remain active, and manually queued tracks play before the
-remaining playlist while preserving their enqueue order.
+In development for **v0.4.0**: clickable Player controls are available first;
+a navigable YouTube Search tab is the next part of the release.
+
+**v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
+and prioritizes manually queued tracks without ending the playlist session.
 
 The latest packaged release is **v0.3.0**, which introduced persistent play
 history, a reusable audio cache, and keyboard- and mouse-friendly tabs.
@@ -158,6 +161,10 @@ next
 
 ### Navigate the interface
 
+- The Player tab has ASCII controls for **PLAY** (`|>`), **PAUSE** (`||`),
+  **NEXT** (`->|`), and **STOP** (`[]`). Click one, or reach it with Tab and
+  activate it with Enter or Space. PLAY resumes paused audio; the command
+  prompt remains available for adding new songs.
 - The bordered file-style tabs sit above the player. A cyan dot marks the
   active view; hovering highlights a tab without taking focus from your typing.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
@@ -176,6 +183,7 @@ next
   **SHUFFLE**, and **LOOP**. Enter or Space activates a focused button.
 - New and renamed playlist names are entered at the bottom prompt; Escape
   cancels the naming prompt. Deletion requires activating **DELETE** twice.
+- The interactive layout requires a terminal of at least **68 × 21** cells.
 
 ### Local history and cache
 

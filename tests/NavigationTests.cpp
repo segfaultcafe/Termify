@@ -98,5 +98,37 @@ int main() {
   CHECK(future.Handle(
       MouseEvent{MouseButton::Left, MouseAction::Press, 30, 1, {}}));
   CHECK(future.Selected() == 2);
+
+  WidgetHost controls;
+  auto &play = controls.Emplace<Button>("play", "|> PLAY");
+  auto &pause = controls.Emplace<Button>("pause", "|| PAUSE");
+  auto &next = controls.Emplace<Button>("next", "->| NEXT");
+  auto &stop = controls.Emplace<Button>("stop", "[] STOP");
+  play.SetBounds({0, 0, 13, 1});
+  pause.SetBounds({14, 0, 13, 1});
+  next.SetBounds({28, 0, 13, 1});
+  stop.SetBounds({42, 0, 13, 1});
+  CHECK(controls.Focus("play"));
+  CHECK(controls.Dispatch(KeyEvent{Key::Enter, {}, {}}));
+  CHECK(play.TakeActivation());
+  CHECK(controls.Dispatch(KeyEvent{Key::Tab, {}, {}}));
+  CHECK(controls.FocusedId() == "pause");
+  CHECK(controls.Dispatch(KeyEvent{Key::Character, " ", {}}));
+  CHECK(pause.TakeActivation());
+  CHECK(controls.Dispatch(
+      MouseEvent{MouseButton::Left, MouseAction::Press, 30, 0, {}}));
+  CHECK(next.TakeActivation());
+  CHECK(controls.FocusedId() == "next");
+  CHECK(controls.Dispatch(
+      MouseEvent{MouseButton::Left, MouseAction::Press, 44, 0, {}}));
+  CHECK(stop.TakeActivation());
+  Canvas controlsCanvas(55, 1);
+  controls.Render(controlsCanvas);
+  std::ostringstream controlsRendered;
+  controlsCanvas.Present(controlsRendered, {1, 1});
+  CHECK(controlsRendered.str().find("|> PLAY") != std::string::npos);
+  CHECK(controlsRendered.str().find("|| PAUSE") != std::string::npos);
+  CHECK(controlsRendered.str().find("->| NEXT") != std::string::npos);
+  CHECK(controlsRendered.str().find("[] STOP") != std::string::npos);
   return 0;
 }

@@ -97,6 +97,10 @@ Application::Application() {
   _nowPlaying = &_widgets.Emplace<tui::Label>("now-playing");
   _details = &_widgets.Emplace<tui::Label>("track-details");
   _progress = &_widgets.Emplace<tui::ProgressBar>("track-progress");
+  _playerPlay = &_widgets.Emplace<tui::Button>("player-play", "|> PLAY");
+  _playerPause = &_widgets.Emplace<tui::Button>("player-pause", "|| PAUSE");
+  _playerNext = &_widgets.Emplace<tui::Button>("player-next", "->| NEXT");
+  _playerStop = &_widgets.Emplace<tui::Button>("player-stop", "[] STOP");
   _queueRule = &_widgets.Emplace<tui::Rule>("queue-rule");
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     _queueItems[index] =
@@ -192,6 +196,8 @@ void Application::runInteractiveInput() {
     bool deletePlaylist = false, addHistory = false, addCurrent = false;
     bool removeTrack = false, moveUp = false, moveDown = false;
     bool playPlaylist = false, toggleShuffle = false, toggleLoop = false;
+    bool resumePlayback = false, pausePlayback = false;
+    bool nextTrack = false, stopPlayback = false;
     {
       std::lock_guard widgetLock(_widgetMtx);
       const auto oldTab = _tabs->Selected();
@@ -252,6 +258,10 @@ void Application::runInteractiveInput() {
       playPlaylist = _playlistPlay->TakeActivation();
       toggleShuffle = _playlistShuffle->TakeActivation();
       toggleLoop = _playlistLoop->TakeActivation();
+      resumePlayback = _playerPlay->TakeActivation();
+      pausePlayback = _playerPause->TakeActivation();
+      nextTrack = _playerNext->TakeActivation();
+      stopPlayback = _playerStop->TakeActivation();
       if (key && key->key == tui::Key::Character &&
           (key->text == "a" || key->text == "A") &&
           _widgets.FocusedId() == "history-list")
@@ -286,6 +296,14 @@ void Application::runInteractiveInput() {
       togglePlaylistShuffle();
     if (toggleLoop)
       togglePlaylistLoop();
+    if (resumePlayback)
+      _mixer->Resume();
+    if (pausePlayback)
+      _mixer->Pause();
+    if (nextTrack)
+      _mixer->NextSong();
+    if (stopPlayback)
+      _mixer->Stop(false, true);
     if (submission) {
       if (_playlistPrompt != PlaylistPrompt::None)
         finishPlaylistPrompt(*submission);
@@ -308,7 +326,7 @@ void Application::runStreamInput() {
 void Application::configureWidgets(int width) {
   const int contentWidth = width - 6;
   _tabs->SetBounds({0, 0, width, 3});
-  _frame->SetBounds({0, 3, width, 16});
+  _frame->SetBounds({0, 3, width, 17});
   _summary->SetBounds({3, 4, contentWidth, 1});
   _historyRule->SetBounds({0, 5, width, 1});
   _historyList->SetBounds({3, 6, contentWidth, 8});
@@ -333,17 +351,28 @@ void Application::configureWidgets(int width) {
   _nowPlaying->SetBounds({3, 6, contentWidth, 1});
   _details->SetBounds({3, 7, contentWidth, 1});
   _progress->SetBounds({3, 8, contentWidth, 1});
-  _queueRule->SetBounds({0, 9, width, 1});
+  constexpr int controlGap = 1;
+  const int controlWidth = (contentWidth - controlGap * 3) / 4;
+  int controlColumn = 3;
+  _playerPlay->SetBounds({controlColumn, 9, controlWidth, 1});
+  controlColumn += controlWidth + controlGap;
+  _playerPause->SetBounds({controlColumn, 9, controlWidth, 1});
+  controlColumn += controlWidth + controlGap;
+  _playerNext->SetBounds({controlColumn, 9, controlWidth, 1});
+  controlColumn += controlWidth + controlGap;
+  _playerStop->SetBounds(
+      {controlColumn, 9, 3 + contentWidth - controlColumn, 1});
+  _queueRule->SetBounds({0, 10, width, 1});
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     _queueItems[index]->SetBounds(
-        {3, 10 + static_cast<int>(index), contentWidth, 1});
+        {3, 11 + static_cast<int>(index), contentWidth, 1});
   }
-  _waveformRule->SetBounds({0, 13, width, 1});
-  _waveform->SetBounds({3, 14, contentWidth, 1});
-  _separator->SetBounds({0, 15, width, 1});
-  _status->SetBounds({3, 16, contentWidth, 1});
-  _help->SetBounds({3, 17, contentWidth, 1});
-  _input->SetBounds({0, 19, width, 1});
+  _waveformRule->SetBounds({0, 14, width, 1});
+  _waveform->SetBounds({3, 15, contentWidth, 1});
+  _separator->SetBounds({0, 16, width, 1});
+  _status->SetBounds({3, 17, contentWidth, 1});
+  _help->SetBounds({3, 18, contentWidth, 1});
+  _input->SetBounds({0, 20, width, 1});
 }
 
 void Application::applyView() {
@@ -360,7 +389,8 @@ void Application::applyView() {
     widget->SetVisible(playlists);
   for (auto *widget : std::vector<tui::Widget *>{
            _nowPlayingRule, _nowPlaying, _details, _progress, _queueRule,
-           _waveformRule, _waveform})
+           _waveformRule, _waveform, _playerPlay, _playerPause, _playerNext,
+           _playerStop})
     widget->SetVisible(!history && !playlists);
   for (auto *item : _queueItems)
     item->SetVisible(!history && !playlists);
@@ -368,6 +398,9 @@ void Application::applyView() {
     _widgets.Focus("tabs");
   if (!playlists && _widgets.FocusedId() &&
       _widgets.FocusedId()->starts_with("playlist-"))
+    _widgets.Focus("tabs");
+  if ((history || playlists) && _widgets.FocusedId() &&
+      _widgets.FocusedId()->starts_with("player-"))
     _widgets.Focus("tabs");
 }
 
@@ -768,18 +801,18 @@ void Application::renderUi() {
 
   const int columns = terminalWidth();
   const int rows = terminalHeight();
-  if (columns < 68 || rows < 20) {
+  if (columns < 68 || rows < 21) {
     std::lock_guard outputLock(_visualizationCtx.coutMtx);
     std::cout << "\033[2J";
     tui::Canvas notice(std::max(1, columns - 1), std::max(1, rows - 1));
-    notice.Text({0, 0}, "Resize terminal to at least 68 x 20", YELLOW);
+    notice.Text({0, 0}, "Resize terminal to at least 68 x 21", YELLOW);
     notice.Present(std::cout, {1, 1});
     _lastUiWidth = 0;
     return;
   }
   const int width = std::min(120, std::max(64, columns - 4));
   const int left = std::max(1, (columns - width) / 2 + 1);
-  const int top = std::max(1, (rows - 20) / 2 + 1);
+  const int top = std::max(1, (rows - 21) / 2 + 1);
   _visualizationCtx.uiLeftColumn.store(left);
   _visualizationCtx.uiTopRow.store(top);
   const int contentWidth = width - 6;
@@ -874,11 +907,11 @@ void Application::renderUi() {
           : _tabs->Selected() == 2
               ? "Click/select lists · Tab reaches every action · Enter "
                 "activates"
-              : "Click tabs · Alt+←/→ switch · Tab focus · help: commands",
+              : "Click controls · Tab then Enter/Space · CLI remains active",
           contentWidth),
       MUTED);
 
-  tui::Canvas canvas(width, 20);
+  tui::Canvas canvas(width, 21);
   _widgets.Render(canvas);
 
   std::lock_guard outputLock(_visualizationCtx.coutMtx);

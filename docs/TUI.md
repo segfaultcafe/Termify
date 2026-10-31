@@ -16,9 +16,11 @@ not write ANSI positioning, color, border, or mouse-mode sequences directly.
 
 The current screen is composed from `Frame`, `Rule`, `Label`, `ProgressBar`,
 `TextInput`, `Button`, `TabBar`, and `ListView` widgets. Player, History, and
-Playlists share the frame, status, and command prompt. Playlist actions are
-ordinary focusable buttons, so the same operation is available to mouse and
-keyboard users.
+Playlists share the frame, status, and command prompt. Playlist actions and the
+Player's ASCII playback controls are ordinary focusable buttons, so the same
+operation is available to mouse and keyboard users. The Player controls call
+the same mixer operations as `resume`, `pause`, `next`, and `stop`; the shared
+command prompt remains the source for queueing new songs.
 
 `TabBar` owns selection, arrow-key navigation, and tab hit testing. `ListView`
 owns a scrollable selection, keyboard/mouse navigation, and an activation event
@@ -73,8 +75,9 @@ enable hover; both motion tracking and SGR reporting are disabled on exit.
 Alt+Left/Right switches views globally. Tab/Shift+Tab cycles visible focusable
 widgets, and Escape focuses the command prompt. Left/right arrows on the tab
 bar change views; up/down and paging keys in History move its selection. Enter
-activates a history entry to queue it again. Hidden widgets cannot receive focus
-or input. The cursor is visible only when a focused widget supplies one.
+activates a history entry to queue it again. Enter or Space activates a focused
+button, including the Player controls. Hidden widgets cannot receive focus or
+input. The cursor is visible only when a focused widget supplies one.
 
 ## Rendering and state
 
