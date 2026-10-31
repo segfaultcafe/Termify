@@ -22,18 +22,18 @@
 - Clean cancellation, temporary-file cleanup, and readable error messages
 - Self-contained online fetching: no Python or separate yt-dlp installation
 
-History tabs and persistent caching are unreleased source-build features; the
-v0.2.0 archive below predates them.
+New in **v0.3.0**: persistent play history, a reusable audio cache, and
+keyboard- and mouse-friendly tabs.
 
 ## Install the Linux release
 
-Download `termify-v0.2.0-linux-x86_64.tar.gz` and its checksum from the
-[v0.2.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.2.0).
+Download `termify-v0.3.0-linux-x86_64.tar.gz` and its checksum from the
+[v0.3.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.3.0).
 
 ```bash
-sha256sum -c termify-v0.2.0-linux-x86_64.tar.gz.sha256
-tar -xzf termify-v0.2.0-linux-x86_64.tar.gz
-cd termify-v0.2.0-linux-x86_64
+sha256sum -c termify-v0.3.0-linux-x86_64.tar.gz.sha256
+tar -xzf termify-v0.3.0-linux-x86_64.tar.gz
+cd termify-v0.3.0-linux-x86_64
 ./install.sh
 ```
 
@@ -52,26 +52,28 @@ Python and a separate yt-dlp install are not required.
 
 ### Distribution setup
 
-Termify uses FFmpeg libraries for decoding and ALSA for audio output. Install
-those runtime dependencies before running the release:
+Termify uses FFmpeg libraries for decoding, ALSA for audio output, and SQLite
+for local storage. Install those runtime dependencies before running the
+release. The archive is not yet a universal Linux binary; check the ABI
+compatibility note below before installing.
 
 **Arch Linux / Manjaro**
 
 ```bash
-sudo pacman -S ffmpeg alsa-lib
+sudo pacman -S ffmpeg alsa-lib sqlite
 ```
 
 **Fedora**
 
 ```bash
-sudo dnf install ffmpeg-free alsa-lib
+sudo dnf install ffmpeg-free alsa-lib sqlite-libs
 ```
 
 **Debian / Ubuntu / Linux Mint**
 
 ```bash
 sudo apt update
-sudo apt install ffmpeg libasound2
+sudo apt install ffmpeg libasound2 libsqlite3-0
 ```
 
 On Debian 13 and newer, `libasound2` may be provided by `libasound2t64` and is
@@ -80,15 +82,16 @@ normally selected automatically.
 **openSUSE**
 
 ```bash
-sudo zypper install ffmpeg libasound2
+sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The v0.2.0 prebuilt binary is produced on x86_64 Arch Linux and expects
+above. The v0.3.0 prebuilt binary is produced on x86_64 Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
-`libavutil.so.61`, and `libswresample.so.7`). It is directly compatible with
-current rolling distributions that provide those libraries. On distributions
-with an older FFmpeg ABI, use the source-build instructions below; the build
+`libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
+`libasound.so.2`. It is tested on the build host, not certified across all
+distributions. On distributions with an older FFmpeg ABI, use the source-build
+instructions below; the build
 will link against that distribution's native FFmpeg version.
 
 Alpine uses musl rather than glibc, and NixOS does not expose system libraries
@@ -198,8 +201,7 @@ Requirements:
 - FFmpeg development libraries: `libavformat`, `libavcodec`, `libavutil`, and
   `libswresample`
 - ALSA development libraries
-- SQLite3 development libraries (also a runtime library dependency for these
-  source builds; no database service is needed)
+- SQLite3 development libraries (no database service is needed)
 - `curl` and `sha256sum` to fetch and verify the bundled downloader
 
 ```bash

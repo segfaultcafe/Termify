@@ -61,10 +61,11 @@ terminal or system in a broken state.
 
 ## Milestones
 
-- **v0.3 — Reliability:** harden the queue, downloader cancellation, cleanup,
-  error recovery, and terminal-resize behavior.
+- **v0.3 — Library foundation (released):** persistent history, bounded audio
+  caching, navigable tabs, and the verified bundled-downloader fix. Further
+  cancellation and error-recovery hardening remains part of the v1 gates.
 - **v0.5 — Daily usability:** add seeking, shortcuts, persistent settings,
-  history, playlists, and favorites.
+  playlists, and favorites.
 - **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
   add verified update checks and rollback, and test packages on clean supported
   distributions.
@@ -75,7 +76,7 @@ terminal or system in a broken state.
 
 ## Library foundation and next goal
 
-Implemented on `feat/play-history` (not yet released):
+Released in v0.3.0:
 
 - Reusable tab and scrollable-list widgets with keyboard and mouse navigation.
 - Player and History views; select a past play and queue it again.

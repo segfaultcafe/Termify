@@ -43,10 +43,13 @@ install -Dm755 "$PROJECT_DIR/scripts/install-release.sh" \
   "$STAGE_DIR/install.sh"
 install -Dm644 "$PROJECT_DIR/README.md" "$STAGE_DIR/README.md"
 install -Dm644 "$PROJECT_DIR/LICENSE" "$STAGE_DIR/LICENSE"
+install -Dm644 "$PROJECT_DIR/assets/termify.png" "$STAGE_DIR/assets/termify.png"
+install -Dm644 "$PROJECT_DIR/ROADMAP.md" "$STAGE_DIR/ROADMAP.md"
+install -Dm644 "$PROJECT_DIR/docs/TUI.md" "$STAGE_DIR/docs/TUI.md"
 
 tar --sort=name --owner=0 --group=0 --numeric-owner \
   -czf "$ARCHIVE" -C "$DIST_DIR" "$PACKAGE_NAME"
-sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+(cd "$DIST_DIR" && sha256sum "$PACKAGE_NAME.tar.gz" > "$PACKAGE_NAME.tar.gz.sha256")
 
 "$STAGE_DIR/termify" --version
 "$STAGE_DIR/yt-dlp" --version
