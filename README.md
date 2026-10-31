@@ -182,6 +182,9 @@ cross-platform audio backend and platform-specific terminal and process
 adapters; the decoder, queue, metadata, progress, and playback state are
 already portable.
 
+The supported-release goals and milestones are tracked in
+[ROADMAP.md](ROADMAP.md).
+
 ## License
 
 [MIT](LICENSE)
