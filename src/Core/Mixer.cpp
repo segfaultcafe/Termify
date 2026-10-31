@@ -5,12 +5,13 @@ namespace termify::core {
 
 Mixer::Mixer(PlaybackContext *playback, RingBufferContext *ringBuffer,
              VisualizationContext *visualization,
-             MixerResponseContext *responses, SongQueue *queue) {
+             MixerResponseContext *responses, SongQueue *queue, LocalStore *store) {
   _ctx.playbackCtx = playback;
   _ctx.ringBufferCtx = ringBuffer;
   _ctx.visualizationCtx = visualization;
   _ctx.mResponseCtx = responses;
   _ctx.trackQueue = queue;
+  _ctx.store = store;
   _schedulerThread = std::thread([this] { schedulerLoop(); });
   _prefetchThread = std::thread([this] { prefetchLoop(); });
 }
@@ -18,6 +19,9 @@ Mixer::Mixer(PlaybackContext *playback, RingBufferContext *ringBuffer,
 Mixer::~Mixer() { Shutdown(); }
 
 bool Mixer::AddToQueue(string song) {
+  std::error_code pathError;
+  if (std::filesystem::is_regular_file(song, pathError))
+    song = std::filesystem::absolute(song).lexically_normal().string();
   const string displayName = song;
   if (!_ctx.trackQueue->Push(std::move(song))) {
     dispatchResponse("The queue is full (20 tracks).", true);
@@ -204,9 +208,9 @@ void Mixer::prefetchLoop() {
     lock.unlock();
     try {
       auto prepared = YtDlpManager::Self().PrepareAudio(
-          song->query, &_prefetchCancel);
+          song->query, &_prefetchCancel, _ctx.store);
       if (!_ctx.trackQueue->MarkReady(song->id, prepared.path,
-                                      prepared.temporary) &&
+                                      prepared.temporary, prepared.cacheLease) &&
           prepared.temporary) {
         std::error_code error;
         std::filesystem::remove(prepared.path, error);
@@ -246,6 +250,7 @@ void Mixer::startNext() {
   }
 
   const QueuedSong song = std::move(*next);
+  _ctx.source = song.query;
   {
     std::lock_guard trackLock(_trackMtx);
     _trackName = song.query;
@@ -270,9 +275,10 @@ void Mixer::startNext() {
     try {
       if (preparedSong.state != QueueState::Ready) {
         auto prepared = YtDlpManager::Self().PrepareAudio(
-            preparedSong.query, &_ctx.playbackCtx->shouldStop);
+            preparedSong.query, &_ctx.playbackCtx->shouldStop, _ctx.store);
         preparedSong.preparedPath = std::move(prepared.path);
         preparedSong.temporary = prepared.temporary;
+        preparedSong.cacheLease = std::move(prepared.cacheLease);
       }
       do {
         FFmpegDecoder decoder(_ctx);

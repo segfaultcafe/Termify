@@ -9,9 +9,9 @@ namespace termify::tui {
 
 namespace {
 constexpr std::string_view ENTER_SEQUENCE =
-    "\033[?1049h\033[2J\033[H\033[?1000h\033[?1006h\033[?25h";
+    "\033[?1049h\033[2J\033[H\033[?1000h\033[?1003h\033[?1006h\033[?25h";
 constexpr std::string_view LEAVE_SEQUENCE =
-    "\033[?1006l\033[?1000l\033[?25h\033[?1049l";
+    "\033[?1006l\033[?1003l\033[?1000l\033[?25h\033[?1049l";
 
 void writeAll(int descriptor, std::string_view value) {
   while (!value.empty()) {

@@ -76,6 +76,13 @@ int main() {
   CHECK(event && std::get<MouseEvent>(*event).button == MouseButton::WheelDown);
   CHECK(std::get<MouseEvent>(*event).action == MouseAction::Scroll);
 
+  decoder.Feed("\033[<35;18;6M");
+  event = decoder.Pop();
+  CHECK(event && std::holds_alternative<MouseEvent>(*event));
+  CHECK(std::get<MouseEvent>(*event).action == MouseAction::Move);
+  CHECK(std::get<MouseEvent>(*event).button == MouseButton::None);
+  CHECK(std::get<MouseEvent>(*event).column == 18);
+
   decoder.Feed("é");
   const auto unicode = nextKey(decoder);
   CHECK(unicode && unicode->key == Key::Character && unicode->text == "é");

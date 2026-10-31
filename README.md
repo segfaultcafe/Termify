@@ -15,20 +15,25 @@
 - Responsive, centered terminal interface with a live waveform
 - Title, artist, album, elapsed time, duration, and playback progress
 - Bounded 20-track queue with one-at-a-time background prefetching
+- Player and History tabs with keyboard navigation and mouse selection
+- Local play history and a bounded audio cache for replaying downloaded tracks
 - Pause, resume, skip, repeat, stop, and software volume control
 - Editable Unicode-aware input with cursor movement and deletion
 - Clean cancellation, temporary-file cleanup, and readable error messages
 - Self-contained online fetching: no Python or separate yt-dlp installation
 
+New in **v0.3.0**: persistent play history, a reusable audio cache, and
+keyboard- and mouse-friendly tabs.
+
 ## Install the Linux release
 
-Download `termify-v0.2.0-linux-x86_64.tar.gz` and its checksum from the
-[v0.2.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.2.0).
+Download `termify-v0.3.0-linux-x86_64.tar.gz` and its checksum from the
+[v0.3.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.3.0).
 
 ```bash
-sha256sum -c termify-v0.2.0-linux-x86_64.tar.gz.sha256
-tar -xzf termify-v0.2.0-linux-x86_64.tar.gz
-cd termify-v0.2.0-linux-x86_64
+sha256sum -c termify-v0.3.0-linux-x86_64.tar.gz.sha256
+tar -xzf termify-v0.3.0-linux-x86_64.tar.gz
+cd termify-v0.3.0-linux-x86_64
 ./install.sh
 ```
 
@@ -47,26 +52,28 @@ Python and a separate yt-dlp install are not required.
 
 ### Distribution setup
 
-Termify uses FFmpeg libraries for decoding and ALSA for audio output. Install
-those runtime dependencies before running the release:
+Termify uses FFmpeg libraries for decoding, ALSA for audio output, and SQLite
+for local storage. Install those runtime dependencies before running the
+release. The archive is not yet a universal Linux binary; check the ABI
+compatibility note below before installing.
 
 **Arch Linux / Manjaro**
 
 ```bash
-sudo pacman -S ffmpeg alsa-lib
+sudo pacman -S ffmpeg alsa-lib sqlite
 ```
 
 **Fedora**
 
 ```bash
-sudo dnf install ffmpeg-free alsa-lib
+sudo dnf install ffmpeg-free alsa-lib sqlite-libs
 ```
 
 **Debian / Ubuntu / Linux Mint**
 
 ```bash
 sudo apt update
-sudo apt install ffmpeg libasound2
+sudo apt install ffmpeg libasound2 libsqlite3-0
 ```
 
 On Debian 13 and newer, `libasound2` may be provided by `libasound2t64` and is
@@ -75,15 +82,16 @@ normally selected automatically.
 **openSUSE**
 
 ```bash
-sudo zypper install ffmpeg libasound2
+sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The v0.2.0 prebuilt binary is produced on x86_64 Arch Linux and expects
+above. The v0.3.0 prebuilt binary is produced on x86_64 Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
-`libavutil.so.61`, and `libswresample.so.7`). It is directly compatible with
-current rolling distributions that provide those libraries. On distributions
-with an older FFmpeg ABI, use the source-build instructions below; the build
+`libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
+`libasound.so.2`. It is tested on the build host, not certified across all
+distributions. On distributions with an older FFmpeg ABI, use the source-build
+instructions below; the build
 will link against that distribution's native FFmpeg version.
 
 Alpine uses musl rather than glibc, and NixOS does not expose system libraries
@@ -125,6 +133,7 @@ Then enter commands at the `termify ›` prompt:
 | `volume 60` | Set volume from 0 to 100 percent |
 | `volume +10` / `volume -10` | Adjust volume relative to its current level |
 | `queue` | Show the number of queued tracks |
+| `history` / `player` | Switch to the History or Player tab |
 | `clear` | Clear upcoming tracks |
 | `stop` | Stop playback and clear the queue |
 | `help` | Show the interactive command list |
@@ -141,8 +150,45 @@ volume 65
 next
 ```
 
-Queued online tracks are prefetched for the current session. Downloads are
-removed after playback or when the queue is cleared.
+### Navigate the interface
+
+- The bordered file-style tabs sit above the player. A cyan dot marks the
+  active view; hovering highlights a tab without taking focus from your typing.
+- Use **Alt+Left / Alt+Right** or click a tab to switch views.
+- **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
+  bar is focused; **Esc** returns to the command prompt.
+- In History, use **Up / Down**, **Page Up / Page Down**, or **Home / End** to
+  select a play. The mouse wheel scrolls and a click selects a row.
+- Press **Enter** on a selected history row to queue that song again. The
+  `history` command opens the tab and focuses the list directly.
+
+### Local history and cache
+
+Termify keeps the latest **1,000 plays** in an embedded SQLite database. A play
+is recorded when audio first reaches the output device, not when a download
+starts. Repeated plays are separate entries, newest first. History survives
+restarts; queued tracks and playback position do not yet persist.
+
+Online tracks are prefetched and kept in a **256 MiB** disk cache. Reusing the
+same search text or URL—including replaying a history entry—avoids another
+download while that audio remains cached. `[cache]` marks available cached
+audio in History. Different searches for the same song are separate cache
+keys. Least-recently-used files are evicted first, but queued or playing files
+are protected. Oversized tracks or a cache full of protected files use temporary
+downloads, removed after use. Local files are played in place, never copied or
+deleted by the cache.
+
+Default storage locations:
+
+| Data | Location |
+| --- | --- |
+| History and cache index | `~/.local/share/termify/library.sqlite3` |
+| Downloaded audio | `~/.cache/termify/audio/` |
+
+Absolute `XDG_DATA_HOME` and `XDG_CACHE_HOME` values override these base
+directories. SQLite runs inside Termify: no database server, SQLite command-line
+tool, Python, or account is required. If storage cannot be opened, playback
+continues without persistence and the interface reports the problem.
 
 ## Build from source
 
@@ -155,6 +201,8 @@ Requirements:
 - FFmpeg development libraries: `libavformat`, `libavcodec`, `libavutil`, and
   `libswresample`
 - ALSA development libraries
+- SQLite3 development libraries (no database service is needed)
+- `curl` and `sha256sum` to fetch and verify the bundled downloader
 
 ```bash
 git clone https://github.com/segfaultcafe/Termify.git
@@ -171,9 +219,11 @@ make package    # create the tested Linux release archive and checksum
 make install    # build, test, and install to /usr/local/bin
 ```
 
-`make package` downloads the pinned official standalone yt-dlp release, checks
-its SHA-256 digest, and includes it in the archive. This packaging step requires
-network access; ordinary source builds do not.
+`make build` and `make package` use the same pinned official standalone yt-dlp
+release and verify its SHA-256 digest. The first build downloads it into the
+project cache; subsequent builds reuse the verified copy without network access.
+Python and a separate yt-dlp installation are not required. The build reports
+the bundled downloader version so an outdated copy is easy to spot.
 
 The terminal interface is composed from reusable, keyboard- and mouse-aware
 widgets. See [docs/TUI.md](docs/TUI.md) before adding or changing interface

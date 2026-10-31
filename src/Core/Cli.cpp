@@ -19,6 +19,10 @@ std::optional<string> commandHelp(const string &topic) {
     return "repeat — toggle repeating the current track";
   case Command::VOLUME:
     return "volume <0-100> to set volume; volume <+N|-N> to adjust it";
+  case Command::HISTORY:
+    return "history — open play history; arrows select, Enter queues a track";
+  case Command::PLAYER:
+    return "player — return to the player tab";
   case Command::QUEUE:
     return "queue — show how many tracks are waiting";
   case Command::CLEAR:
@@ -60,12 +64,15 @@ Command StringToCommand(string command) {
     return Command::CLEAR;
   if (command == "volume" || command == "vol" || command == ".v")
     return Command::VOLUME;
+  if (command == "history") return Command::HISTORY;
+  if (command == "player") return Command::PLAYER;
   if (command == "help" || command == ".h" || command == "?")
     return Command::HELP;
   return Command::UNKNOWN;
 }
 
-Cli::Cli(std::unique_ptr<Mixer> &mixer) : _mixer(mixer) {}
+Cli::Cli(std::unique_ptr<Mixer> &mixer, std::function<void(bool)> switchTab)
+    : _mixer(mixer), _switchTab(std::move(switchTab)) {}
 
 void Cli::Execute(const string &line) {
   auto *ctx = _mixer->GetCtxRef();
@@ -141,7 +148,7 @@ void Cli::Execute(const string &line) {
   case Command::HELP:
     if (args.size() == 1) {
       _mixer->PublishMessage(
-          "play  pause  resume  next  repeat  volume  stop  queue  clear  "
+          "play  pause  resume  next  repeat  volume  history  player  stop  queue  clear  "
           "exit — use help <command>");
       break;
     }
@@ -155,6 +162,14 @@ void Cli::Execute(const string &line) {
       _mixer->PublishMessage(
           "Unknown help topic. Try: help play, help volume, or help stop.",
           true);
+    }
+    break;
+  case Command::HISTORY:
+  case Command::PLAYER:
+    if (args.size() != 1) {
+      _mixer->PublishMessage("Usage: history | player (no arguments)", true);
+    } else if (_switchTab) {
+      _switchTab(StringToCommand(args.front()) == Command::HISTORY);
     }
     break;
   case Command::UNKNOWN:

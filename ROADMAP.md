@@ -61,10 +61,11 @@ terminal or system in a broken state.
 
 ## Milestones
 
-- **v0.3 — Reliability:** harden the queue, downloader cancellation, cleanup,
-  error recovery, and terminal-resize behavior.
+- **v0.3 — Library foundation (released):** persistent history, bounded audio
+  caching, navigable tabs, and the verified bundled-downloader fix. Further
+  cancellation and error-recovery hardening remains part of the v1 gates.
 - **v0.5 — Daily usability:** add seeking, shortcuts, persistent settings,
-  history, playlists, and favorites.
+  playlists, and favorites.
 - **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
   add verified update checks and rollback, and test packages on clean supported
   distributions.
@@ -73,26 +74,25 @@ terminal or system in a broken state.
 - **v1.0 — Supported release:** meet every release gate above and publish a
   documented compatibility and stability promise.
 
-## Next goal after the TUI foundation
+## Library foundation and next goal
 
-Add a dedicated animated cassette widget between **UP NEXT** and
-**LIVE WAVEFORM**.
+Released in v0.3.0:
 
-- Draw two reels connected by a tape path using the shared widget and canvas
-  APIs.
-- Derive reel fill from normalized playback progress: the left reel gradually
-  shrinks while the right reel grows from the beginning to the end of a track.
-- Advance a subtle rotation phase from elapsed playback time so movement is
-  slow and continuous, freezes while paused, and catches up correctly after a
-  seek.
-- Keep the animation decorative and independent from the decoder and mixer.
-- Provide a compact representation or hide decorative detail when the terminal
-  is too narrow or short.
-- Test deterministic frames at 0%, 50%, and 100% progress, plus pause, resume,
-  seek, and unknown-duration states.
+- Reusable tab and scrollable-list widgets with keyboard and mouse navigation.
+- Player and History views; select a past play and queue it again.
+- Embedded SQLite storage for the latest 1,000 plays, following XDG paths.
+- A 256 MiB least-recently-used audio cache, with active tracks protected from
+  eviction and cached audio reusable across restarts.
+- The verified bundled-downloader fix retained from the discarded cassette
+  branch. The decorative cassette feature is no longer planned.
 
-The cassette layout and visual language will be designed after the widget
-foundation is merged, in a separate feature branch.
+Next, design a Playlists tab on the same widget and storage foundations:
+
+- Create, rename, and delete local playlists.
+- Add and remove songs, reorder entries, and play an entire playlist.
+- Add songs from History and the current track without retyping the source.
+- Define explicit history/cache management controls and safe schema migrations
+  before adding more persistent library data.
 
 ## Not required for v1
 

@@ -83,11 +83,31 @@ bool YtDlpManager::Init() {
 }
 
 PreparedAudio YtDlpManager::PrepareAudio(const string &query,
-                                         const atomic_bool *cancel) {
-  if (std::filesystem::exists(query)) {
-    return {.path = query, .temporary = false};
+                                         const atomic_bool *cancel,
+                                         LocalStore *store) {
+  std::error_code pathError;
+  if (std::filesystem::is_regular_file(query, pathError)) {
+    return {.path = std::filesystem::absolute(query).string(), .temporary = false, .cacheLease = {}};
   }
-  return {.path = DownloadAudioToFile(query, cancel), .temporary = true};
+  if (std::filesystem::path(query).is_absolute())
+    throw std::runtime_error("Local audio file is missing or unreadable: " + query);
+  if (store) {
+    try {
+      if (auto cached = store->FindAudio(query))
+        return {cached->path, false, std::move(cached->lease)};
+    } catch (const std::exception &) { /* Playback survives cache failures. */ }
+  }
+  const auto downloaded = DownloadAudioToFile(query, cancel);
+  if (store) {
+    try {
+      if (auto cached = store->StoreAudio(query, downloaded)) {
+        std::error_code error;
+        std::filesystem::remove(downloaded, error);
+        return {cached->path, false, std::move(cached->lease)};
+      }
+    } catch (const std::exception &) { /* Keep the temporary download playable. */ }
+  }
+  return {downloaded, true, {}};
 }
 
 string YtDlpManager::DownloadAudioToFile(const string &query,

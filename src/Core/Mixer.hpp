@@ -10,7 +10,7 @@ class Mixer {
 public:
   Mixer(PlaybackContext *playback, RingBufferContext *ringBuffer,
         VisualizationContext *visualization, MixerResponseContext *responses,
-        SongQueue *queue);
+        SongQueue *queue, LocalStore *store = nullptr);
   ~Mixer();
 
   Mixer(const Mixer &) = delete;
