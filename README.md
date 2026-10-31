@@ -15,10 +15,15 @@
 - Responsive, centered terminal interface with a live waveform
 - Title, artist, album, elapsed time, duration, and playback progress
 - Bounded 20-track queue with one-at-a-time background prefetching
+- Player and History tabs with keyboard navigation and mouse selection
+- Local play history and a bounded audio cache for replaying downloaded tracks
 - Pause, resume, skip, repeat, stop, and software volume control
 - Editable Unicode-aware input with cursor movement and deletion
 - Clean cancellation, temporary-file cleanup, and readable error messages
 - Self-contained online fetching: no Python or separate yt-dlp installation
+
+History tabs and persistent caching are unreleased source-build features; the
+v0.2.0 archive below predates them.
 
 ## Install the Linux release
 
@@ -125,6 +130,7 @@ Then enter commands at the `termify ›` prompt:
 | `volume 60` | Set volume from 0 to 100 percent |
 | `volume +10` / `volume -10` | Adjust volume relative to its current level |
 | `queue` | Show the number of queued tracks |
+| `history` / `player` | Switch to the History or Player tab |
 | `clear` | Clear upcoming tracks |
 | `stop` | Stop playback and clear the queue |
 | `help` | Show the interactive command list |
@@ -141,8 +147,43 @@ volume 65
 next
 ```
 
-Queued online tracks are prefetched for the current session. Downloads are
-removed after playback or when the queue is cleared.
+### Navigate the interface
+
+- Use **Alt+Left / Alt+Right** or click a tab to switch views.
+- **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
+  bar is focused; **Esc** returns to the command prompt.
+- In History, use **Up / Down**, **Page Up / Page Down**, or **Home / End** to
+  select a play. The mouse wheel scrolls and a click selects a row.
+- Press **Enter** on a selected history row to queue that song again. The
+  `history` command opens the tab and focuses the list directly.
+
+### Local history and cache
+
+Termify keeps the latest **1,000 plays** in an embedded SQLite database. A play
+is recorded when audio first reaches the output device, not when a download
+starts. Repeated plays are separate entries, newest first. History survives
+restarts; queued tracks and playback position do not yet persist.
+
+Online tracks are prefetched and kept in a **256 MiB** disk cache. Reusing the
+same search text or URL—including replaying a history entry—avoids another
+download while that audio remains cached. `[cache]` marks available cached
+audio in History. Different searches for the same song are separate cache
+keys. Least-recently-used files are evicted first, but queued or playing files
+are protected. Oversized tracks or a cache full of protected files use temporary
+downloads, removed after use. Local files are played in place, never copied or
+deleted by the cache.
+
+Default storage locations:
+
+| Data | Location |
+| --- | --- |
+| History and cache index | `~/.local/share/termify/library.sqlite3` |
+| Downloaded audio | `~/.cache/termify/audio/` |
+
+Absolute `XDG_DATA_HOME` and `XDG_CACHE_HOME` values override these base
+directories. SQLite runs inside Termify: no database server, SQLite command-line
+tool, Python, or account is required. If storage cannot be opened, playback
+continues without persistence and the interface reports the problem.
 
 ## Build from source
 
@@ -155,6 +196,8 @@ Requirements:
 - FFmpeg development libraries: `libavformat`, `libavcodec`, `libavutil`, and
   `libswresample`
 - ALSA development libraries
+- SQLite3 development libraries (also a runtime library dependency for these
+  source builds; no database service is needed)
 - `curl` and `sha256sum` to fetch and verify the bundled downloader
 
 ```bash

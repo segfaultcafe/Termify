@@ -2,6 +2,7 @@
 #include "Common.hpp"
 #include <algorithm>
 #include <mutex>
+#include <ctime>
 
 namespace termify::core {
 
@@ -85,7 +86,20 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
       }
       frames -= w;
       off += w;
-      playbackCtx->positionFrames.fetch_add(static_cast<uint64>(w));
+      const auto previous = playbackCtx->positionFrames.fetch_add(static_cast<uint64>(w));
+      if (w > 0 && previous == 0 && ctx.store) {
+        HistoryEntry entry;
+        entry.source = ctx.source;
+        entry.durationSeconds = static_cast<std::int64_t>(playbackCtx->durationFrames.load() / 44100);
+        entry.playedAt = std::time(nullptr);
+        {
+          std::lock_guard metadataLock(playbackCtx->metadataMtx);
+          entry.title = playbackCtx->metadata.title;
+          entry.artist = playbackCtx->metadata.artist;
+          entry.album = playbackCtx->metadata.album;
+        }
+        ctx.store->QueueRecord(std::move(entry));
+      }
     }
   }
 }

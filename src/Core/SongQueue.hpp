@@ -2,6 +2,7 @@
 #define _TERMIFY_CORE_SONG_QUEUE_HPP
 
 #include "Defines.hpp"
+#include "LocalStore.hpp"
 #include <deque>
 #include <optional>
 
@@ -16,6 +17,7 @@ struct QueuedSong {
   string preparedPath;
   bool temporary{false};
   string error;
+  std::shared_ptr<CacheLease> cacheLease;
 };
 
 class SongQueue {
@@ -25,7 +27,8 @@ public:
   std::optional<uint64> Push(string song);
   std::optional<QueuedSong> PopForPlayback();
   std::optional<QueuedSong> ClaimForPrefetch();
-  bool MarkReady(uint64 id, string path, bool temporary);
+  bool MarkReady(uint64 id, string path, bool temporary,
+                 std::shared_ptr<CacheLease> lease = {});
   bool MarkFailed(uint64 id, string error);
   vector<QueuedSong> Snapshot(std::size_t limit = 3) const;
   std::size_t Size() const;

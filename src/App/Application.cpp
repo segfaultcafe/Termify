@@ -3,6 +3,7 @@
 #include "../Core/AudioDownloader.hpp"
 
 #include <cmath>
+#include <ctime>
 #include <sys/ioctl.h>
 
 namespace termify::app {
@@ -21,13 +22,32 @@ Application::Application() {
   _playbackCtx.gRunning.store(true);
   _ringBufferCtx.ringBuffer.resize(_ringBufferCtx.CHANNELS *
                                    _ringBufferCtx.BUFFER_FRAMES);
+  try {
+    _store = std::make_unique<core::LocalStore>(
+        core::LocalStore::DefaultDataDirectory(), core::LocalStore::DefaultCacheDirectory());
+  } catch (const std::exception &error) {
+    _statusMessage = "Local storage unavailable: " + string(error.what());
+    _statusIsError = true;
+  }
   _mixer = std::make_unique<core::Mixer>(
       &_playbackCtx, &_ringBufferCtx, &_visualizationCtx, &_mResponseCtx,
-      &_trackQueue);
-  _cli = std::make_unique<core::Cli>(_mixer);
+      &_trackQueue, _store.get());
+  _cli = std::make_unique<core::Cli>(_mixer, [this](bool history) {
+    std::lock_guard lock(_widgetMtx);
+    _tabs->Select(history ? 1 : 0);
+    applyView();
+    _widgets.Focus(history ? "history-list" : "command-input");
+    _historyRefresh.store(true);
+  });
 
   _frame = &_widgets.Emplace<tui::Frame>("player-frame");
   _summary = &_widgets.Emplace<tui::Label>("playback-summary");
+  _tabs = &_widgets.Emplace<tui::TabBar>("tabs", std::vector<string>{"PLAYER", "HISTORY"});
+  _historyRule = &_widgets.Emplace<tui::Rule>("history-rule");
+  _historyList = &_widgets.Emplace<tui::ListView>("history-list");
+  _historyRule->SetLabel("PLAY HISTORY");
+  _historyList->SetEmptyText(_store ? "No plays yet. Play a song to start your history."
+                                  : "Local storage is unavailable.");
   _nowPlayingRule = &_widgets.Emplace<tui::Rule>("now-playing-rule");
   _nowPlaying = &_widgets.Emplace<tui::Label>("now-playing");
   _details = &_widgets.Emplace<tui::Label>("track-details");
@@ -51,6 +71,7 @@ Application::Application() {
   _waveformRule->SetLabel("LIVE WAVEFORM");
   _input->SetPrompt({{"termify", CYAN_BOLD}, {" › ", {}}});
   _widgets.Focus("command-input");
+  applyView();
 }
 
 Application::~Application() {
@@ -118,11 +139,32 @@ void Application::runInteractiveInput() {
     }
 
     std::optional<string> submission;
+    std::optional<string> replay;
     {
       std::lock_guard widgetLock(_widgetMtx);
-      _widgets.Dispatch(*event);
+      const auto oldTab = _tabs->Selected();
+      const auto *key = std::get_if<tui::KeyEvent>(&*event);
+      if (key && key->key == tui::Key::Escape) {
+        _widgets.Focus("command-input");
+      } else if (key && key->modifiers.alt &&
+                 (key->key == tui::Key::ArrowLeft || key->key == tui::Key::ArrowRight)) {
+        _tabs->Select(1 - _tabs->Selected());
+        _widgets.Focus("tabs");
+      } else {
+        _widgets.Dispatch(*event);
+      }
+      if (_tabs->Selected() != oldTab) {
+        applyView();
+        _historyRefresh.store(true);
+      }
+      if (const auto id = _historyList->TakeActivation()) {
+        for (const auto &entry : _historyEntries) {
+          if (std::to_string(entry.id) == *id) { replay = entry.source; break; }
+        }
+      }
       submission = _input->TakeSubmission();
     }
+    if (replay) _mixer->AddToQueue(*replay);
     if (submission && !submission->empty()) {
       _cli->Execute(*submission);
     }
@@ -141,33 +183,100 @@ void Application::runStreamInput() {
 
 void Application::configureWidgets(int width) {
   const int contentWidth = width - 6;
-  _frame->SetBounds({0, 0, width, 16});
+  _frame->SetBounds({0, 0, width, 17});
   _summary->SetBounds({3, 1, contentWidth, 1});
-  _nowPlayingRule->SetBounds({0, 2, width, 1});
-  _nowPlaying->SetBounds({3, 3, contentWidth, 1});
-  _details->SetBounds({3, 4, contentWidth, 1});
-  _progress->SetBounds({3, 5, contentWidth, 1});
-  _queueRule->SetBounds({0, 6, width, 1});
+  _tabs->SetBounds({3, 2, contentWidth, 1});
+  _historyRule->SetBounds({0, 3, width, 1});
+  _historyList->SetBounds({3, 4, contentWidth, 9});
+  _nowPlayingRule->SetBounds({0, 3, width, 1});
+  _nowPlaying->SetBounds({3, 4, contentWidth, 1});
+  _details->SetBounds({3, 5, contentWidth, 1});
+  _progress->SetBounds({3, 6, contentWidth, 1});
+  _queueRule->SetBounds({0, 7, width, 1});
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     _queueItems[index]->SetBounds(
-        {3, 7 + static_cast<int>(index), contentWidth, 1});
+        {3, 8 + static_cast<int>(index), contentWidth, 1});
   }
-  _waveformRule->SetBounds({0, 10, width, 1});
-  _waveform->SetBounds({3, 11, contentWidth, 1});
-  _separator->SetBounds({0, 12, width, 1});
-  _status->SetBounds({3, 13, contentWidth, 1});
-  _help->SetBounds({3, 14, contentWidth, 1});
-  _input->SetBounds({0, 16, width, 1});
+  _waveformRule->SetBounds({0, 11, width, 1});
+  _waveform->SetBounds({3, 12, contentWidth, 1});
+  _separator->SetBounds({0, 13, width, 1});
+  _status->SetBounds({3, 14, contentWidth, 1});
+  _help->SetBounds({3, 15, contentWidth, 1});
+  _input->SetBounds({0, 17, width, 1});
+}
+
+void Application::applyView() {
+  const bool history = _tabs->Selected() == 1;
+  _historyRule->SetVisible(history);
+  _historyList->SetVisible(history);
+  for (auto *widget : std::vector<tui::Widget *>{_nowPlayingRule, _nowPlaying, _details,
+         _progress, _queueRule, _waveformRule, _waveform})
+    widget->SetVisible(!history);
+  for (auto *item : _queueItems) item->SetVisible(!history);
+  if (!history && _widgets.FocusedId() == "history-list") _widgets.Focus("tabs");
+}
+
+void Application::refreshHistory() {
+  if (!_store) return;
+  {
+    std::lock_guard lock(_widgetMtx);
+    if (_tabs->Selected() != 1) return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (!_historyRefresh.exchange(false) && _historyRevision == _store->Revision() &&
+      now < _historyNextPoll) return;
+  _historyNextPoll = now + std::chrono::seconds(5);
+  try {
+    const auto revision = _store->Revision();
+    auto entries = _store->History();
+    std::vector<tui::ListItem> items;
+    for (const auto &entry : entries) {
+      const auto timestamp = static_cast<std::time_t>(entry.playedAt);
+      std::tm time{};
+      localtime_r(&timestamp, &time);
+      char date[32]{};
+      std::strftime(date, sizeof(date), "%m/%d %H:%M", &time);
+      string label = string(date) + "  " + (entry.cached ? "[cache] " : "        ") +
+                     entry.title + (entry.artist.empty() ? "" : " — " + entry.artist);
+      label.erase(std::remove_if(label.begin(), label.end(), [](unsigned char ch) {
+        return ch < 32 || ch == 127;
+      }), label.end());
+      items.push_back({std::to_string(entry.id), std::move(label)});
+    }
+    std::lock_guard lock(_widgetMtx);
+    _historyEntries = std::move(entries);
+    _historyList->SetItems(std::move(items));
+    _historyRule->SetLabel("PLAY HISTORY · " + std::to_string(_historyEntries.size()) +
+                           (_historyEntries.size() == 1 ? " play" : " plays"));
+    _historyRevision = revision;
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not read history: " + string(error.what());
+    _statusIsError = true;
+  }
 }
 
 void Application::renderUi() {
   readLatestMessage();
+  if (_store) {
+    const auto error = _store->TakeError();
+    if (!error.empty()) { _statusMessage = "Could not save history: " + error; _statusIsError = true; }
+  }
+  refreshHistory();
 
-  const int columns = std::max(42, terminalWidth());
-  const int rows = std::max(17, terminalHeight());
-  const int width = std::min(120, std::max(42, columns - 4));
+  const int columns = terminalWidth();
+  const int rows = terminalHeight();
+  if (columns < 42 || rows < 18) {
+    std::lock_guard outputLock(_visualizationCtx.coutMtx);
+    std::cout << "\033[2J";
+    tui::Canvas notice(std::max(1, columns - 1), std::max(1, rows - 1));
+    notice.Text({0, 0}, "Resize terminal to at least 42 x 18", YELLOW);
+    notice.Present(std::cout, {1, 1});
+    _lastUiWidth = 0;
+    return;
+  }
+  const int width = std::min(120, std::max(40, columns - 4));
   const int left = std::max(1, (columns - width) / 2 + 1);
-  const int top = std::max(1, (rows - 17) / 2 + 1);
+  const int top = std::max(1, (rows - 18) / 2 + 1);
   _visualizationCtx.uiLeftColumn.store(left);
   _visualizationCtx.uiTopRow.store(top);
   const int contentWidth = width - 6;
@@ -256,18 +365,21 @@ void Application::renderUi() {
       {{_statusIsError ? "! " : "› ", statusStyle},
        {tui::Canvas::Clip(_statusMessage, contentWidth - 2), statusStyle}});
   _help->SetText(tui::Canvas::Clip(
-                     "play · pause · next · repeat · volume · stop · help",
+                     _tabs->Selected() == 1
+                       ? "↑↓ select · Enter queue · Tab focus · Esc prompt"
+                       : "play · pause · next · volume · history · Tab: tabs",
                      contentWidth),
                  MUTED);
 
-  tui::Canvas canvas(width, core::VisualizationContext::PROMPT_ROW);
+  tui::Canvas canvas(width, 18);
   _widgets.Render(canvas);
 
   std::lock_guard outputLock(_visualizationCtx.coutMtx);
-  if (_lastUiLeft != left || _lastUiTop != top) {
+  if (_lastUiLeft != left || _lastUiTop != top || _lastUiWidth != width) {
     std::cout << "\033[2J";
     _lastUiLeft = left;
     _lastUiTop = top;
+    _lastUiWidth = width;
   }
   canvas.Present(std::cout, {left, top}, _widgets.Cursor());
   return;

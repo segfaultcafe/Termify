@@ -4,6 +4,7 @@
 #include "../Core/Cli.hpp"
 #include "../Tui/Terminal.hpp"
 #include "../Tui/Widgets.hpp"
+#include "../Tui/Navigation.hpp"
 
 namespace termify::app {
 
@@ -21,6 +22,8 @@ private:
   void runInteractiveInput();
   void runStreamInput();
   void configureWidgets(int width);
+  void applyView();
+  void refreshHistory();
   string buildWaveform(std::size_t width);
   static string formatDuration(uint64 frames);
   static int terminalWidth();
@@ -31,12 +34,20 @@ private:
   core::VisualizationContext _visualizationCtx;
   core::MixerResponseContext _mResponseCtx;
   core::SongQueue _trackQueue;
+  std::unique_ptr<core::LocalStore> _store;
   std::unique_ptr<core::Mixer> _mixer;
   std::unique_ptr<core::Cli> _cli;
   tui::Terminal _terminal;
   tui::WidgetHost _widgets;
   tui::Frame *_frame{nullptr};
   tui::Label *_summary{nullptr};
+  tui::TabBar *_tabs{nullptr};
+  tui::Rule *_historyRule{nullptr};
+  tui::ListView *_historyList{nullptr};
+  std::vector<core::HistoryEntry> _historyEntries;
+  std::atomic_bool _historyRefresh{true};
+  std::uint64_t _historyRevision{0};
+  std::chrono::steady_clock::time_point _historyNextPoll{};
   tui::Rule *_nowPlayingRule{nullptr};
   tui::Label *_nowPlaying{nullptr};
   tui::Label *_details{nullptr};
@@ -54,6 +65,7 @@ private:
   bool _statusIsError{false};
   int _lastUiLeft{0};
   int _lastUiTop{0};
+  int _lastUiWidth{0};
 };
 
 } // namespace termify::app

@@ -16,7 +16,7 @@ void printHelp() {
       << "  -V, --version    Show the version and exit\n\n"
       << "Interactive commands:\n"
       << "  play <song|URL|file>  pause  resume  next  repeat\n"
-      << "  volume <0-100|+N|-N>  queue  clear  stop  help  exit\n";
+      << "  volume <0-100|+N|-N>  history  player  queue  clear  stop  help  exit\n";
 }
 }
 

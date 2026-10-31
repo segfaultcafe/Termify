@@ -109,8 +109,10 @@ void Canvas::Present(std::ostream &output, Point origin,
     styleSet = false;
   }
   if (cursor) {
-    output << "\033[" << origin.row + cursor->row << ';'
+    output << "\033[?25h\033[" << origin.row + cursor->row << ';'
            << origin.column + cursor->column << 'H';
+  } else {
+    output << "\033[?25l";
   }
   output << std::flush;
 }

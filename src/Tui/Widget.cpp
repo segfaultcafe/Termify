@@ -27,6 +27,7 @@ void WidgetHost::Render(Canvas &canvas) const {
 }
 
 bool WidgetHost::Dispatch(const Event &event) {
+  if (_focused && !_focused->Visible()) SetFocused(nullptr);
   if (const auto *mouse = std::get_if<MouseEvent>(&event)) {
     Widget *target = HitTest({mouse->column, mouse->row});
     if (!target)
@@ -80,7 +81,7 @@ std::optional<std::string> WidgetHost::FocusedId() const {
 }
 
 std::optional<Point> WidgetHost::Cursor() const {
-  return _focused ? _focused->Cursor() : std::nullopt;
+  return _focused && _focused->Visible() ? _focused->Cursor() : std::nullopt;
 }
 
 bool WidgetHost::CycleFocus(int step) {

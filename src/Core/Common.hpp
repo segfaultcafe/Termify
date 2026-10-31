@@ -3,6 +3,7 @@
 
 #include "Defines.hpp"
 #include "SongQueue.hpp"
+#include "LocalStore.hpp"
 #include <queue>
 
 namespace termify::core {
@@ -21,6 +22,8 @@ struct AtomicContext {
   VisualizationContext *visualizationCtx;
   MixerResponseContext *mResponseCtx;
   SongQueue *trackQueue;
+  LocalStore *store{nullptr};
+  string source;
 };
 
 struct TrackMetadata {
@@ -57,7 +60,6 @@ struct RingBufferContext {
 };
 
 struct VisualizationContext {
-  static constexpr int PROMPT_ROW = 17;
   std::array<int16, BUFFER_SIZE> visBuffer{};
   std::mutex visMtx;
   std::mutex coutMtx;
