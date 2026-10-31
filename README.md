@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/termify.png" alt="Termify playing a track in a terminal" width="100%">
+  <img src="assets/termify-playlists.png" alt="Termify playing a track with Player, History, and Playlists tabs" width="100%">
 </p>
 
 <h1 align="center">Termify</h1>
