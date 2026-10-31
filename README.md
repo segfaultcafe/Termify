@@ -318,6 +318,11 @@ already portable.
 The supported-release goals and milestones are tracked in
 [ROADMAP.md](ROADMAP.md).
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development setup, code style, testing expectations, and pull-request process.
+
 ## License
 
 [MIT](LICENSE)
