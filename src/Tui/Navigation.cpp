@@ -104,6 +104,11 @@ void TabBar::Render(Canvas &canvas) const {
 
 ListView::ListView(std::string id) : Widget(std::move(id)) {}
 void ListView::SetEmptyText(std::string text) { _emptyText = std::move(text); }
+void ListView::SetDoubleClickActivates(bool enabled) {
+  _doubleClickActivates = enabled;
+  _lastClickedId.reset();
+  _lastClickPoint.reset();
+}
 
 void ListView::SetItems(std::vector<ListItem> items) {
   const auto previous = SelectedId();
@@ -171,11 +176,34 @@ bool ListView::Handle(const Event &event) {
     }
     if (mouse->action == MouseAction::Press &&
         mouse->button == MouseButton::Left) {
+      const auto now = std::chrono::steady_clock::now();
+      const Point point{mouse->column, mouse->row};
+      if (_doubleClickActivates && _lastClickedId &&
+          _lastClickPoint == point &&
+          now - _lastClickAt <= std::chrono::milliseconds(400)) {
+        const auto clicked = std::find_if(
+            _items.begin(), _items.end(), [&](const auto &item) {
+              return item.id == *_lastClickedId;
+            });
+        if (clicked != _items.end()) {
+          _selected = static_cast<std::size_t>(clicked - _items.begin());
+          _doubleClickActivation = clicked->id;
+          _lastClickedId.reset();
+          _lastClickPoint.reset();
+          return true;
+        }
+      }
       const auto row = mouse->row - Bounds().row;
       if (row >= 0 && row < Bounds().height) {
         const auto index = VisibleStart() + static_cast<std::size_t>(row);
         if (index < _items.size()) {
           _selected = index;
+          if (_doubleClickActivates) {
+            const auto &id = _items[index].id;
+            _lastClickedId = id;
+            _lastClickPoint = point;
+            _lastClickAt = now;
+          }
           return true;
         }
       }
@@ -207,6 +235,9 @@ void ListView::Render(Canvas &canvas) const {
 
 std::optional<std::string> ListView::TakeActivation() {
   return std::exchange(_activation, {});
+}
+std::optional<std::string> ListView::TakeDoubleClickActivation() {
+  return std::exchange(_doubleClickActivation, {});
 }
 std::optional<std::string> ListView::SelectedId() const {
   return _items.empty() ? std::nullopt

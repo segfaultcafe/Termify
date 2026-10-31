@@ -21,9 +21,11 @@ struct MixerRig {
   SongQueue queue;
   std::unique_ptr<Mixer> mixer;
 
-  MixerRig()
-      : mixer(std::make_unique<Mixer>(&playback, &ringBuffer, &visualization,
-                                      &responses, &queue)) {}
+  explicit MixerRig(bool running = false) {
+    playback.gRunning.store(running);
+    mixer = std::make_unique<Mixer>(&playback, &ringBuffer, &visualization,
+                                    &responses, &queue);
+  }
 };
 
 int main() {
@@ -34,12 +36,20 @@ int main() {
     CHECK(current && current->query == "song-a");
 
     CHECK(rig.mixer->AddToQueue("darude sandstorm"));
-    const auto upcoming = rig.queue.Snapshot();
+    auto upcoming = rig.queue.Snapshot();
     CHECK(upcoming.size() == 2);
     CHECK(upcoming[0].query == "darude sandstorm");
     CHECK(upcoming[0].origin == QueueOrigin::Manual);
     CHECK(upcoming[1].query == "song-b");
     CHECK(upcoming[1].origin == QueueOrigin::Playlist);
+
+    CHECK(rig.mixer->AddToQueue("song-b"));
+    upcoming = rig.queue.Snapshot();
+    CHECK(upcoming.size() == 2);
+    CHECK(upcoming[0].query == "song-b");
+    CHECK(upcoming[1].query == "darude sandstorm");
+    CHECK(rig.mixer->AddToQueue("song-b"));
+    CHECK(rig.queue.Size() == 2);
   }
 
   {
@@ -68,6 +78,16 @@ int main() {
     CHECK(rig.queue.PopForPlayback()->query == "song-a");
     CHECK(rig.queue.PopForPlayback()->query == "song-b");
     rig.mixer->NextSong();
+    CHECK(rig.queue.Empty());
+  }
+
+  {
+    MixerRig rig(true);
+    CHECK(rig.mixer->PlayNow("idle-play-now-regression"));
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(1);
+    while (!rig.queue.Empty() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     CHECK(rig.queue.Empty());
   }
 

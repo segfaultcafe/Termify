@@ -536,6 +536,58 @@ AddTrackResult LocalStore::AddSourceToPlaylist(std::int64_t playlistId,
   return added ? AddTrackResult::Added : AddTrackResult::Duplicate;
 }
 
+AddTrackResult
+LocalStore::AddVerifiedSourceToPlaylist(std::int64_t playlistId,
+                                        const HistoryEntry &track) {
+  if (!track.source.starts_with("https://") &&
+      !track.source.starts_with("http://"))
+    return AddTrackResult::UnresolvedSource;
+
+  std::lock_guard lock(_mutex);
+  const auto hash = SourceHash(track.source);
+  Statement duplicate(
+      _db, "SELECT 1 FROM playlist_entries WHERE playlist_id=? AND "
+           "source_hash=? LIMIT 1");
+  duplicate.Number(1, playlistId);
+  duplicate.Text(2, hash);
+  if (duplicate.Next())
+    return AddTrackResult::Duplicate;
+  Statement count(_db,
+                  "SELECT COUNT(*) FROM playlist_entries WHERE playlist_id=?");
+  count.Number(1, playlistId);
+  count.Next();
+  if (count.Number(0) >= PLAYLIST_TRACK_LIMIT)
+    return AddTrackResult::PlaylistFull;
+
+  Transaction transaction(_db);
+  Statement upsert(
+      _db,
+      "INSERT INTO library_tracks(source_hash,source,title,artist,album,"
+      "duration) VALUES(?,?,?,?,?,?) ON CONFLICT(source_hash) DO UPDATE "
+      "SET title=excluded.title,artist=excluded.artist,album=excluded.album,"
+      "duration=excluded.duration");
+  upsert.Text(1, hash);
+  upsert.Text(2, track.source);
+  upsert.Text(3, track.title.empty() ? track.source : track.title);
+  upsert.Text(4, track.artist);
+  upsert.Text(5, track.album);
+  upsert.Number(6, std::max<std::int64_t>(0, track.durationSeconds));
+  upsert.Next();
+  Statement insert(
+      _db, "INSERT OR IGNORE INTO playlist_entries(playlist_id,source_hash,"
+           "position) SELECT ?,?,COALESCE(MAX(position),-1)+1 FROM "
+           "playlist_entries WHERE playlist_id=?");
+  insert.Number(1, playlistId);
+  insert.Text(2, hash);
+  insert.Number(3, playlistId);
+  insert.Next();
+  const bool added = sqlite3_changes(_db) != 0;
+  transaction.Commit();
+  if (added)
+    ++_revision;
+  return added ? AddTrackResult::Added : AddTrackResult::Duplicate;
+}
+
 bool LocalStore::RemovePlaylistTrack(std::int64_t playlistId,
                                      std::int64_t entryId) {
   std::lock_guard lock(_mutex);

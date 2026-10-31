@@ -132,6 +132,20 @@ int main() {
     CHECK(history.size() == 2 && history[0].cached && history[1].cached);
 
     const auto playlist = store.CreatePlaylist("Road trip");
+    const auto searchPlaylist = store.CreatePlaylist("Search picks");
+    const HistoryEntry searchResult{
+        0, "https://www.youtube.com/watch?v=search-result", "Search title",
+        "Search artist", {}, 240, 0, false};
+    CHECK(store.AddVerifiedSourceToPlaylist(searchPlaylist, searchResult) ==
+          AddTrackResult::Added);
+    CHECK(store.AddVerifiedSourceToPlaylist(searchPlaylist, searchResult) ==
+          AddTrackResult::Duplicate);
+    const auto searchTracks = store.PlaylistTracks(searchPlaylist);
+    CHECK(searchTracks.size() == 1 &&
+          searchTracks[0].source == searchResult.source &&
+          searchTracks[0].title == searchResult.title &&
+          !searchTracks[0].cached);
+    CHECK(store.DeletePlaylist(searchPlaylist));
     CHECK(store.AddHistoryToPlaylist(playlist, history[1].id) ==
           AddTrackResult::Added);
     CHECK(store.AddHistoryToPlaylist(playlist, history[1].id) ==

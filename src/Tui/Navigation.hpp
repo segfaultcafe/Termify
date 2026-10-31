@@ -3,6 +3,8 @@
 
 #include "Widget.hpp"
 
+#include <chrono>
+
 namespace termify::tui {
 
 class TabBar : public Widget {
@@ -33,9 +35,11 @@ public:
   bool Focusable() const override { return true; }
   void SetItems(std::vector<ListItem> items);
   void SetEmptyText(std::string text);
+  void SetDoubleClickActivates(bool enabled);
   bool Handle(const Event &event) override;
   void Render(Canvas &canvas) const override;
   std::optional<std::string> TakeActivation();
+  std::optional<std::string> TakeDoubleClickActivation();
   std::optional<std::string> SelectedId() const;
   bool SelectId(const std::string &id);
 
@@ -45,6 +49,11 @@ private:
   std::string _emptyText{"Nothing here yet."};
   std::size_t _selected{0};
   std::optional<std::string> _activation;
+  std::optional<std::string> _doubleClickActivation;
+  std::optional<std::string> _lastClickedId;
+  std::optional<Point> _lastClickPoint;
+  std::chrono::steady_clock::time_point _lastClickAt{};
+  bool _doubleClickActivates{false};
 };
 
 } // namespace termify::tui

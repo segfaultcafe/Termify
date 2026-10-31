@@ -15,6 +15,27 @@ namespace fs = std::filesystem;
 int main(int argc, char **argv) {
   // Act as a deterministic downloader subprocess: no network or Python.
   if (argc > 1) {
+    bool search = false;
+    for (int i = 1; i < argc; ++i) {
+      if (std::string(argv[i]).starts_with("ytsearch10:"))
+        search = true;
+    }
+    if (search) {
+      std::ofstream calls(std::getenv("TERMIFY_TEST_CALLS"), std::ios::app);
+      calls << "search\n";
+      std::cout
+          << "first-id\x1f"
+             "First result\x1f"
+             "First artist\x1f"
+             "125\x1f"
+             "https://www.youtube.com/watch?v=first-id\n"
+          << "second-id\x1f"
+             "Second result\x1f"
+             "Second artist\x1f"
+             "240\x1f"
+             "https://www.youtube.com/watch?v=second-id\n";
+      return 0;
+    }
     for (int i = 1; i < argc; ++i) {
       if (std::string(argv[i]) == "--skip-download") {
         std::cout << "https://www.youtube.com/watch?v=resolved\n";
@@ -48,43 +69,52 @@ int main(int argc, char **argv) {
   const auto callsFile = root / "calls";
   setenv("TERMIFY_TEST_CALLS", callsFile.c_str(), 1);
   setenv("TERMIFY_YTDLP", fs::absolute(argv[0]).c_str(), 1);
-  auto count = [&] {
+  auto count = [&](const std::string &kind) {
     std::ifstream input(callsFile);
     int calls = 0;
     std::string line;
     while (std::getline(input, line))
-      ++calls;
+      if (line == kind)
+        ++calls;
     return calls;
   };
   auto &downloader = YtDlpManager::Self();
   CHECK(downloader.Init());
+  const auto search = downloader.SearchYouTube("  Daft   Punk  ");
+  CHECK(!search.fromCache && search.results.size() == 2);
+  CHECK(search.results[0].title == "First result");
+  CHECK(search.results[0].durationSeconds == 125);
+  const auto cachedSearch = downloader.SearchYouTube("daft punk");
+  CHECK(cachedSearch.fromCache && cachedSearch.results.size() == 2);
+  CHECK(count("search") == 1);
   bool missingRejected = false;
   try {
     downloader.PrepareAudio((root / "missing.wav").string());
   } catch (const std::runtime_error &) {
     missingRejected = true;
   }
-  CHECK(missingRejected && count() == 0);
+  CHECK(missingRejected && count("download") == 0);
   std::string cachedPath;
   {
     LocalStore store(root / "data", root / "cache");
     const auto first = downloader.PrepareAudio("some song", nullptr, &store);
-    CHECK(!first.temporary && first.cacheLease && count() == 1);
+    CHECK(!first.temporary && first.cacheLease && count("download") == 1);
     cachedPath = first.path;
     const auto second = downloader.PrepareAudio("some song", nullptr, &store);
-    CHECK(second.path == first.path && count() == 1);
+    CHECK(second.path == first.path && count("download") == 1);
     CHECK(second.source == "https://www.youtube.com/watch?v=resolved");
   }
   {
     LocalStore reopened(root / "data", root / "cache");
     auto cached = downloader.PrepareAudio("some song", nullptr, &reopened);
-    CHECK(cached.path == cachedPath && count() == 1);
+    CHECK(cached.path == cachedPath && count("download") == 1);
     cached.cacheLease.reset();
     fs::remove(cachedPath);
     auto refreshed = downloader.PrepareAudio("some song", nullptr, &reopened);
-    CHECK(count() == 2 && fs::exists(refreshed.path));
+    CHECK(count("download") == 2 && fs::exists(refreshed.path));
     auto local = downloader.PrepareAudio(refreshed.path, nullptr, &reopened);
-    CHECK(!local.temporary && local.path == refreshed.path && count() == 2);
+    CHECK(!local.temporary && local.path == refreshed.path &&
+          count("download") == 2);
   }
   {
     LocalStore full(root / "small-data", root / "small-cache", 0);

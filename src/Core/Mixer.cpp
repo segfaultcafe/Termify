@@ -25,22 +25,40 @@ bool Mixer::AddToQueue(string song) {
   std::error_code pathError;
   if (std::filesystem::is_regular_file(song, pathError))
     song = std::filesystem::absolute(song).lexically_normal().string();
+  return prioritizeNext(std::move(song), false);
+}
+
+bool Mixer::PlayNow(string song) {
+  std::error_code pathError;
+  if (std::filesystem::is_regular_file(song, pathError))
+    song = std::filesystem::absolute(song).lexically_normal().string();
+  return prioritizeNext(std::move(song), true);
+}
+
+bool Mixer::prioritizeNext(string song, bool playNow) {
   const string displayName = song;
-  if (!enqueue(std::move(song), true)) {
+  const auto outcome = _ctx.trackQueue->PrioritizeNext(std::move(song));
+  if (outcome.result == QueueNextResult::Invalid) {
+    dispatchResponse("Choose a valid track first.", true);
+    return false;
+  }
+  if (outcome.result == QueueNextResult::Full) {
     dispatchResponse("The queue is full (20 tracks).", true);
     return false;
   }
-
-  dispatchResponse("Added to queue: " + displayName);
-  return true;
-}
-
-bool Mixer::enqueue(string song, bool next) {
-  const auto queued = next ? _ctx.trackQueue->PushNext(std::move(song))
-                           : _ctx.trackQueue->Push(std::move(song));
-  if (!queued)
-    return false;
-  _schedulerCv.notify_one();
+  if (playNow) {
+    Stop(true, false);
+    dispatchResponse("Playing now: " + displayName);
+  } else {
+    _schedulerCv.notify_one();
+    if (outcome.result == QueueNextResult::AlreadyNext) {
+      dispatchResponse("Already next: " + displayName);
+    } else if (outcome.result == QueueNextResult::Moved) {
+      dispatchResponse("Moved to next: " + displayName);
+    } else {
+      dispatchResponse("Playing next: " + displayName);
+    }
+  }
   _prefetchCv.notify_one();
   return true;
 }
@@ -143,6 +161,9 @@ void Mixer::Stop(bool force, bool clearQueue) {
         dispatchResponse("Nothing is currently playing.", true);
       }
     }
+    // PlayNow queues its target before stopping the current track. When the
+    // mixer was already idle, this is the notification that starts it.
+    _schedulerCv.notify_one();
     return;
   }
 

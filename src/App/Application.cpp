@@ -55,8 +55,10 @@ Application::Application() {
     std::lock_guard lock(_widgetMtx);
     _tabs->Select(tab);
     applyView();
-    _widgets.Focus(tab == 1 ? "history-list"
-                            : (tab == 2 ? "playlist-list" : "command-input"));
+    _widgets.Focus(tab == 1   ? "history-list"
+                   : tab == 2 ? "playlist-list"
+                   : tab == 3 ? "search-input"
+                              : "command-input");
     _historyRefresh.store(true);
     _playlistRefresh.store(true);
   });
@@ -64,17 +66,27 @@ Application::Application() {
   _frame = &_widgets.Emplace<tui::Frame>("player-frame");
   _summary = &_widgets.Emplace<tui::Label>("playback-summary");
   _tabs = &_widgets.Emplace<tui::TabBar>(
-      "tabs", std::vector<string>{"PLAYER", "HISTORY", "PLAYLISTS"});
+      "tabs",
+      std::vector<string>{"PLAYER", "HISTORY", "PLAYLISTS", "SEARCH"});
+  _quit = &_widgets.Emplace<tui::Button>("quit", "QUIT");
   _historyRule = &_widgets.Emplace<tui::Rule>("history-rule");
   _historyList = &_widgets.Emplace<tui::ListView>("history-list");
+  _historyPlayNow =
+      &_widgets.Emplace<tui::Button>("history-play-now", "PLAY NOW");
+  _historyPlayNext =
+      &_widgets.Emplace<tui::Button>("history-play-next", "PLAY NEXT");
   _historyAdd =
       &_widgets.Emplace<tui::Button>("history-add", "ADD TO PLAYLIST");
   _historyRule->SetLabel("PLAY HISTORY");
   _historyList->SetEmptyText(
       _store ? "No plays yet. Play a song to start your history."
              : "Local storage is unavailable.");
+  _historyList->SetDoubleClickActivates(true);
   _playlistRule = &_widgets.Emplace<tui::Rule>("playlist-rule");
   _playlistTrackRule = &_widgets.Emplace<tui::Rule>("playlist-track-rule");
+  _playlistCommandsRule =
+      &_widgets.Emplace<tui::Rule>("playlist-commands-rule");
+  _trackCommandsRule = &_widgets.Emplace<tui::Rule>("track-commands-rule");
   _playlistList = &_widgets.Emplace<tui::ListView>("playlist-list");
   _playlistTrackList = &_widgets.Emplace<tui::ListView>("playlist-track-list");
   _playlistNew = &_widgets.Emplace<tui::Button>("playlist-new", "NEW");
@@ -85,14 +97,43 @@ Application::Application() {
   _playlistRemove = &_widgets.Emplace<tui::Button>("playlist-remove", "REMOVE");
   _playlistUp = &_widgets.Emplace<tui::Button>("playlist-up", "MOVE UP");
   _playlistDown = &_widgets.Emplace<tui::Button>("playlist-down", "MOVE DOWN");
-  _playlistPlay = &_widgets.Emplace<tui::Button>("playlist-play", "PLAY ALL");
+  _playlistPlay =
+      &_widgets.Emplace<tui::Button>("playlist-play", "PLAY SELECTED");
   _playlistShuffle =
       &_widgets.Emplace<tui::Button>("playlist-shuffle", "SHUFFLE OFF");
   _playlistLoop = &_widgets.Emplace<tui::Button>("playlist-loop", "LOOP OFF");
   _playlistRule->SetLabel("PLAYLISTS");
   _playlistTrackRule->SetLabel("TRACKS");
+  _playlistCommandsRule->SetLabel("PLAYLIST COMMANDS");
+  _trackCommandsRule->SetLabel("TRACK COMMANDS");
   _playlistList->SetEmptyText("No playlists. Choose NEW below.");
   _playlistTrackList->SetEmptyText("This playlist has no tracks.");
+  _searchRule = &_widgets.Emplace<tui::Rule>("search-rule");
+  _searchInput = &_widgets.Emplace<tui::TextInput>("search-input");
+  _searchResultsRule = &_widgets.Emplace<tui::Rule>("search-results-rule");
+  _playlistPickerRule =
+      &_widgets.Emplace<tui::Rule>("playlist-picker-rule");
+  _searchResults = &_widgets.Emplace<tui::ListView>("search-results");
+  _searchPlayNow = &_widgets.Emplace<tui::Button>("search-play-now", "PLAY NOW");
+  _searchPlayNext =
+      &_widgets.Emplace<tui::Button>("search-play-next", "PLAY NEXT");
+  _searchAddPlaylist = &_widgets.Emplace<tui::Button>(
+      "search-add-playlist", "ADD TO PLAYLIST");
+  _searchPlaylistList =
+      &_widgets.Emplace<tui::ListView>("search-playlist-list");
+  _searchPlaylistAdd =
+      &_widgets.Emplace<tui::Button>("search-playlist-add", "ADD HERE");
+  _searchPlaylistNew = &_widgets.Emplace<tui::Button>(
+      "search-playlist-new", "NEW PLAYLIST");
+  _searchPlaylistCancel =
+      &_widgets.Emplace<tui::Button>("search-playlist-cancel", "CANCEL");
+  _searchRule->SetLabel("YOUTUBE SEARCH");
+  _searchInput->SetPrompt({{"search", CYAN_BOLD}, {" › ", {}}});
+  _searchResultsRule->SetLabel("RESULTS");
+  _searchResults->SetEmptyText("Type a query above and press Enter.");
+  _searchResults->SetDoubleClickActivates(true);
+  _searchPlaylistList->SetEmptyText(
+      "No playlists yet. Choose NEW PLAYLIST below.");
   _nowPlayingRule = &_widgets.Emplace<tui::Rule>("now-playing-rule");
   _nowPlaying = &_widgets.Emplace<tui::Label>("now-playing");
   _details = &_widgets.Emplace<tui::Label>("track-details");
@@ -101,7 +142,12 @@ Application::Application() {
       &_widgets.Emplace<tui::Button>("player-play-pause", "|> PLAY");
   _playerNext = &_widgets.Emplace<tui::Button>("player-next", ">| NEXT");
   _playerStop = &_widgets.Emplace<tui::Button>("player-stop", "[] STOP");
+  _playerRepeat =
+      &_widgets.Emplace<tui::Button>("player-repeat", "↻ REPEAT OFF");
+  _playerVolume = &_widgets.Emplace<tui::Knob>("player-volume");
   _queueRule = &_widgets.Emplace<tui::Rule>("queue-rule");
+  _playerAddPlaylist = &_widgets.Emplace<tui::Button>(
+      "player-add-playlist", "ADD TO PLAYLIST");
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     _queueItems[index] =
         &_widgets.Emplace<tui::Label>("queue-item-" + std::to_string(index));
@@ -114,7 +160,8 @@ Application::Application() {
   _input = &_widgets.Emplace<tui::TextInput>("command-input");
 
   _frame->SetTitle(
-      {{" TERMIFY", CYAN_BOLD}, {" ─ terminal audio player", MUTED}});
+      {{" TERMIFY", CYAN_BOLD},
+       {" - terminal audio player - v" TERMIFY_VERSION, MUTED}});
   _nowPlayingRule->SetLabel("NOW PLAYING");
   _queueRule->SetLabel("UP NEXT");
   _waveformRule->SetLabel("LIVE WAVEFORM");
@@ -189,7 +236,9 @@ void Application::runInteractiveInput() {
     }
 
     std::optional<string> submission;
-    std::optional<string> replay;
+    std::optional<string> searchSubmission;
+    std::optional<string> historyPlayNext;
+    std::optional<string> historyPlayNow;
     std::optional<string> playlistReplay;
     bool cancelPrompt = false;
     bool createPlaylist = false, renamePlaylist = false;
@@ -197,6 +246,13 @@ void Application::runInteractiveInput() {
     bool removeTrack = false, moveUp = false, moveDown = false;
     bool playPlaylist = false, toggleShuffle = false, toggleLoop = false;
     bool togglePlayback = false, nextTrack = false, stopPlayback = false;
+    bool toggleRepeatTrack = false;
+    bool quitApplication = false;
+    int volumeAdjustment = 0;
+    bool searchPlayNow = false, searchPlayNext = false;
+    bool openSearchPicker = false, openPlayerPicker = false;
+    bool addPickerTrack = false, createPickerPlaylist = false;
+    bool closePicker = false;
     {
       std::lock_guard widgetLock(_widgetMtx);
       const auto oldTab = _tabs->Selected();
@@ -204,6 +260,9 @@ void Application::runInteractiveInput() {
       if (key && key->key == tui::Key::Escape &&
           _playlistPrompt != PlaylistPrompt::None) {
         cancelPrompt = true;
+      } else if (key && key->key == tui::Key::Escape &&
+                 (_searchPickerOpen || _playerPickerOpen)) {
+        closePicker = true;
       } else if (key && key->key == tui::Key::Escape) {
         _widgets.Focus("command-input");
       } else if (key && key->modifiers.alt &&
@@ -215,6 +274,8 @@ void Application::runInteractiveInput() {
         _widgets.Dispatch(*event);
       }
       if (_tabs->Selected() != oldTab) {
+        if (_playlistPrompt != PlaylistPrompt::None)
+          cancelPrompt = true;
         applyView();
         _historyRefresh.store(true);
         _playlistRefresh.store(true);
@@ -222,7 +283,15 @@ void Application::runInteractiveInput() {
       if (const auto id = _historyList->TakeActivation()) {
         for (const auto &entry : _historyEntries) {
           if (std::to_string(entry.id) == *id) {
-            replay = entry.source;
+            historyPlayNext = entry.source;
+            break;
+          }
+        }
+      }
+      if (const auto id = _historyList->TakeDoubleClickActivation()) {
+        for (const auto &entry : _historyEntries) {
+          if (std::to_string(entry.id) == *id) {
+            historyPlayNow = entry.source;
             break;
           }
         }
@@ -235,6 +304,12 @@ void Application::runInteractiveInput() {
           }
         }
       }
+      if (_searchResults->TakeActivation())
+        searchPlayNow = true;
+      if (_searchResults->TakeDoubleClickActivation())
+        searchPlayNow = true;
+      if (_searchPlaylistList->TakeActivation())
+        addPickerTrack = true;
       if (const auto selected = _playlistList->SelectedId()) {
         try {
           const auto id = std::stoll(*selected);
@@ -249,6 +324,23 @@ void Application::runInteractiveInput() {
       createPlaylist = _playlistNew->TakeActivation();
       renamePlaylist = _playlistRename->TakeActivation();
       deletePlaylist = _playlistDelete->TakeActivation();
+      const auto selectedHistorySource = [this]() -> std::optional<string> {
+        const auto selected = _historyList->SelectedId();
+        if (!selected)
+          return std::nullopt;
+        const auto entry = std::find_if(
+            _historyEntries.begin(), _historyEntries.end(),
+            [&selected](const auto &item) {
+              return std::to_string(item.id) == *selected;
+            });
+        return entry == _historyEntries.end()
+                   ? std::nullopt
+                   : std::optional<string>(entry->source);
+      };
+      if (_historyPlayNow->TakeActivation())
+        historyPlayNow = selectedHistorySource();
+      if (_historyPlayNext->TakeActivation())
+        historyPlayNext = selectedHistorySource();
       addHistory = _historyAdd->TakeActivation();
       addCurrent = _playlistAddCurrent->TakeActivation();
       removeTrack = _playlistRemove->TakeActivation();
@@ -260,16 +352,34 @@ void Application::runInteractiveInput() {
       togglePlayback = _playerPlayPause->TakeActivation();
       nextTrack = _playerNext->TakeActivation();
       stopPlayback = _playerStop->TakeActivation();
+      openPlayerPicker = _playerAddPlaylist->TakeActivation();
+      toggleRepeatTrack = _playerRepeat->TakeActivation();
+      volumeAdjustment = _playerVolume->TakeAdjustment();
+      quitApplication = _quit->TakeActivation();
+      searchPlayNow = _searchPlayNow->TakeActivation() || searchPlayNow;
+      searchPlayNext = _searchPlayNext->TakeActivation();
+      openSearchPicker = _searchAddPlaylist->TakeActivation();
+      addPickerTrack =
+          _searchPlaylistAdd->TakeActivation() || addPickerTrack;
+      createPickerPlaylist = _searchPlaylistNew->TakeActivation();
+      closePicker = _searchPlaylistCancel->TakeActivation() || closePicker;
       if (key && key->key == tui::Key::Character &&
           (key->text == "a" || key->text == "A") &&
           _widgets.FocusedId() == "history-list")
         addHistory = true;
       submission = _input->TakeSubmission();
+      searchSubmission = _searchInput->TakeSubmission();
+    }
+    if (quitApplication) {
+      _mixer->Shutdown();
+      return;
     }
     if (cancelPrompt)
       cancelPlaylistPrompt();
-    if (replay)
-      _mixer->AddToQueue(*replay);
+    if (historyPlayNext)
+      _mixer->AddToQueue(*historyPlayNext);
+    if (historyPlayNow)
+      _mixer->PlayNow(*historyPlayNow);
     if (playlistReplay)
       _mixer->AddToQueue(*playlistReplay);
     if (createPlaylist)
@@ -307,6 +417,34 @@ void Application::runInteractiveInput() {
       _mixer->NextSong();
     if (stopPlayback)
       _mixer->Stop(false, true);
+    if (toggleRepeatTrack)
+      _mixer->ToggleRepeat(!_mixer->IsRepeatOn());
+    if (volumeAdjustment)
+      _mixer->SetVolume(_mixer->Volume() + volumeAdjustment);
+    if (searchPlayNow) {
+      if (const auto result = selectedSearchResult())
+        _mixer->PlayNow(result->source);
+      else
+        _mixer->PublishMessage("Select a search result first.", true);
+    }
+    if (searchPlayNext) {
+      if (const auto result = selectedSearchResult())
+        _mixer->AddToQueue(result->source);
+      else
+        _mixer->PublishMessage("Select a search result first.", true);
+    }
+    if (openSearchPicker)
+      openSearchPlaylistPicker();
+    if (openPlayerPicker)
+      openPlayerPlaylistPicker();
+    if (addPickerTrack)
+      addPickerTrackToPlaylist();
+    if (createPickerPlaylist)
+      beginPlaylistPrompt(false, true);
+    if (closePicker)
+      closePlaylistPicker();
+    if (searchSubmission && !searchSubmission->empty())
+      performSearch(*searchSubmission);
     if (submission) {
       if (_playlistPrompt != PlaylistPrompt::None)
         finishPlaylistPrompt(*submission);
@@ -328,28 +466,58 @@ void Application::runStreamInput() {
 
 void Application::configureWidgets(int width) {
   const int contentWidth = width - 6;
+  constexpr int repeatControlWidth = 17;
+  constexpr int volumeControlWidth = 17;
+  constexpr int summaryControlGap = 1;
+  constexpr int summaryControlsWidth =
+      repeatControlWidth + volumeControlWidth + summaryControlGap;
+  const bool playerView = _tabs->Selected() == 0 && !_playerPickerOpen;
   _tabs->SetBounds({0, 0, width, 3});
+  _quit->SetBounds({width - 10, 3, 8, 1});
   _frame->SetBounds({0, 3, width, 16});
-  _summary->SetBounds({3, 4, contentWidth, 1});
+  _summary->SetBounds(
+      {3, 4, playerView ? contentWidth - summaryControlsWidth : contentWidth,
+       1});
+  const int volumeColumn = width - 3 - volumeControlWidth;
+  _playerRepeat->SetBounds(
+      {volumeColumn - summaryControlGap - repeatControlWidth, 4,
+       repeatControlWidth, 1});
+  _playerVolume->SetBounds({volumeColumn, 4, volumeControlWidth, 1});
   _historyRule->SetBounds({0, 5, width, 1});
   _historyList->SetBounds({3, 6, contentWidth, 8});
-  _historyAdd->SetBounds({3, 14, 22, 1});
+  _historyPlayNow->SetBounds({3, 14, 14, 1});
+  _historyPlayNext->SetBounds({18, 14, 15, 1});
+  _historyAdd->SetBounds({34, 14, 22, 1});
   const int playlistColumn = std::max(25, width / 3);
   _playlistRule->SetBounds({0, 5, playlistColumn, 1});
   _playlistTrackRule->SetBounds({playlistColumn, 5, width - playlistColumn, 1});
-  _playlistList->SetBounds({3, 6, playlistColumn - 5, 5});
+  _playlistList->SetBounds({3, 6, playlistColumn - 5, 4});
   _playlistTrackList->SetBounds(
-      {playlistColumn + 2, 6, width - playlistColumn - 5, 5});
+      {playlistColumn + 2, 6, width - playlistColumn - 5, 4});
+  _playlistCommandsRule->SetBounds({0, 10, width, 1});
   _playlistNew->SetBounds({3, 11, 9, 1});
   _playlistRename->SetBounds({13, 11, 12, 1});
   _playlistDelete->SetBounds({26, 11, 12, 1});
-  _playlistAddCurrent->SetBounds({3, 12, 17, 1});
-  _playlistRemove->SetBounds({21, 12, 12, 1});
-  _playlistUp->SetBounds({34, 12, 13, 1});
-  _playlistDown->SetBounds({48, 12, 15, 1});
-  _playlistPlay->SetBounds({3, 14, 13, 1});
-  _playlistShuffle->SetBounds({17, 14, 17, 1});
-  _playlistLoop->SetBounds({35, 14, 14, 1});
+  _playlistPlay->SetBounds({3, 12, 17, 1});
+  _playlistShuffle->SetBounds({21, 12, 17, 1});
+  _playlistLoop->SetBounds({39, 12, 14, 1});
+  _trackCommandsRule->SetBounds({0, 13, width, 1});
+  _playlistAddCurrent->SetBounds({3, 14, 17, 1});
+  _playlistRemove->SetBounds({21, 14, 12, 1});
+  _playlistUp->SetBounds({34, 14, 13, 1});
+  _playlistDown->SetBounds({48, 14, 15, 1});
+  _searchRule->SetBounds({0, 5, width, 1});
+  _searchInput->SetBounds({3, 6, contentWidth, 1});
+  _searchResultsRule->SetBounds({0, 7, width, 1});
+  _playlistPickerRule->SetBounds({0, 7, width, 1});
+  _searchResults->SetBounds({3, 8, contentWidth, 6});
+  _searchPlaylistList->SetBounds({3, 8, contentWidth, 6});
+  _searchPlayNow->SetBounds({3, 14, 14, 1});
+  _searchPlayNext->SetBounds({18, 14, 15, 1});
+  _searchAddPlaylist->SetBounds({34, 14, 22, 1});
+  _searchPlaylistAdd->SetBounds({3, 14, 18, 1});
+  _searchPlaylistNew->SetBounds({22, 14, 18, 1});
+  _searchPlaylistCancel->SetBounds({41, 14, 12, 1});
   _nowPlayingRule->SetBounds({0, 5, width, 1});
   _nowPlaying->SetBounds({3, 6, contentWidth, 1});
   _details->SetBounds({3, 7, contentWidth, 1});
@@ -364,6 +532,7 @@ void Application::configureWidgets(int width) {
   controlColumn += controlWidth + controlGap;
   _playerStop->SetBounds({controlColumn, 5, controlWidth, 1});
   _queueRule->SetBounds({0, 9, width, 1});
+  _playerAddPlaylist->SetBounds({width - 22, 9, 19, 1});
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     _queueItems[index]->SetBounds(
         {3, 10 + static_cast<int>(index), contentWidth, 1});
@@ -379,30 +548,66 @@ void Application::configureWidgets(int width) {
 void Application::applyView() {
   const bool history = _tabs->Selected() == 1;
   const bool playlists = _tabs->Selected() == 2;
+  const bool search = _tabs->Selected() == 3;
+  const bool player = !history && !playlists && !search;
+  const bool picker = (search && _searchPickerOpen) ||
+                      (player && _playerPickerOpen);
+  const bool searchActions =
+      search && !_searchPickerOpen && !_searchLoading &&
+      !_searchResultItems.empty();
+  const bool historyActions = history && !_historyEntries.empty();
   _historyRule->SetVisible(history);
   _historyList->SetVisible(history);
-  _historyAdd->SetVisible(history);
+  _historyPlayNow->SetVisible(historyActions);
+  _historyPlayNext->SetVisible(historyActions);
+  _historyAdd->SetVisible(historyActions);
   for (auto *widget : std::vector<tui::Widget *>{
-           _playlistRule, _playlistTrackRule, _playlistList, _playlistTrackList,
-           _playlistNew, _playlistRename, _playlistDelete, _playlistAddCurrent,
+           _playlistRule, _playlistTrackRule, _playlistCommandsRule,
+           _trackCommandsRule, _playlistList, _playlistTrackList, _playlistNew,
+           _playlistRename, _playlistDelete, _playlistAddCurrent,
            _playlistRemove, _playlistUp, _playlistDown, _playlistPlay,
            _playlistShuffle, _playlistLoop})
     widget->SetVisible(playlists);
+  _searchRule->SetVisible(search);
+  _searchInput->SetVisible(search);
+  _searchResultsRule->SetVisible(search && !_searchPickerOpen);
+  _playlistPickerRule->SetVisible(picker);
+  _searchResults->SetVisible(search && !_searchPickerOpen);
+  _searchPlayNow->SetVisible(searchActions);
+  _searchPlayNext->SetVisible(searchActions);
+  _searchAddPlaylist->SetVisible(searchActions);
+  _searchPlaylistList->SetVisible(picker);
+  _searchPlaylistAdd->SetVisible(picker);
+  _searchPlaylistNew->SetVisible(picker);
+  _searchPlaylistCancel->SetVisible(picker);
   for (auto *widget : std::vector<tui::Widget *>{
-           _nowPlayingRule, _nowPlaying, _details, _progress, _queueRule,
-           _waveformRule, _waveform, _playerPlayPause, _playerNext,
-           _playerStop})
-    widget->SetVisible(!history && !playlists);
+           _nowPlayingRule, _nowPlaying})
+    widget->SetVisible(player);
+  for (auto *widget : std::vector<tui::Widget *>{
+           _details, _progress, _queueRule, _waveformRule, _waveform,
+           _playerPlayPause, _playerNext, _playerStop, _playerAddPlaylist,
+           _playerRepeat, _playerVolume})
+    widget->SetVisible(player && !_playerPickerOpen);
   for (auto *item : _queueItems)
-    item->SetVisible(!history && !playlists);
+    item->SetVisible(player && !_playerPickerOpen);
+  if (_widgets.FocusedId() &&
+      _widgets.FocusedId()->starts_with("history-") && !historyActions &&
+      _widgets.FocusedId() != "history-list")
+    _widgets.Focus(history ? "history-list" : "tabs");
   if (!history && _widgets.FocusedId() == "history-list")
     _widgets.Focus("tabs");
   if (!playlists && _widgets.FocusedId() &&
       _widgets.FocusedId()->starts_with("playlist-"))
     _widgets.Focus("tabs");
-  if ((history || playlists) && _widgets.FocusedId() &&
+  if (!player && _widgets.FocusedId() &&
       _widgets.FocusedId()->starts_with("player-"))
     _widgets.Focus("tabs");
+  if (!search && !_playerPickerOpen && _widgets.FocusedId() &&
+      _widgets.FocusedId()->starts_with("search-"))
+    _widgets.Focus("tabs");
+  if (search && !_searchPickerOpen && _widgets.FocusedId() &&
+      _widgets.FocusedId()->starts_with("search-playlist-"))
+    _widgets.Focus("search-results");
 }
 
 void Application::refreshHistory() {
@@ -443,6 +648,7 @@ void Application::refreshHistory() {
     _historyRule->SetLabel("PLAY HISTORY · " +
                            std::to_string(_historyEntries.size()) +
                            (_historyEntries.size() == 1 ? " play" : " plays"));
+    applyView();
     _historyRevision = revision;
   } catch (const std::exception &error) {
     _statusMessage = "Could not read history: " + string(error.what());
@@ -528,6 +734,257 @@ void Application::refreshPlaylists() {
   }
 }
 
+std::optional<core::SearchResult> Application::selectedSearchResult() {
+  std::lock_guard lock(_widgetMtx);
+  const auto selected = _searchResults->SelectedId();
+  if (!selected)
+    return std::nullopt;
+  try {
+    const auto index = static_cast<std::size_t>(std::stoull(*selected));
+    if (index < _searchResultItems.size())
+      return _searchResultItems[index];
+  } catch (const std::exception &) {
+  }
+  return std::nullopt;
+}
+
+void Application::performSearch(const string &query) {
+  {
+    std::lock_guard lock(_widgetMtx);
+    _searchPickerOpen = false;
+    _searchLoading = true;
+    _searchResultsRule->SetLabel("RESULTS · searching...");
+    _searchResults->SetEmptyText("Searching YouTube...");
+    applyView();
+  }
+  _statusMessage = "Searching YouTube for '" + query + "'...";
+  _statusIsError = false;
+  try {
+    auto response = core::YtDlpManager::Self().SearchYouTube(query, 10);
+    std::vector<tui::ListItem> items;
+    items.reserve(response.results.size());
+    for (std::size_t index = 0; index < response.results.size(); ++index) {
+      const auto &result = response.results[index];
+      string label = std::to_string(index + 1) + ". " + result.title;
+      if (!result.artist.empty())
+        label += " — " + result.artist;
+      if (result.durationSeconds > 0) {
+        const auto minutes = result.durationSeconds / 60;
+        const auto seconds = result.durationSeconds % 60;
+        std::ostringstream duration;
+        duration << "  " << minutes << ':' << std::setw(2)
+                 << std::setfill('0') << seconds;
+        label += duration.str();
+      }
+      items.push_back({std::to_string(index), std::move(label)});
+    }
+    const auto count = response.results.size();
+    const bool cached = response.fromCache;
+    {
+      std::lock_guard lock(_widgetMtx);
+      _searchResultItems = std::move(response.results);
+      _searchResults->SetItems(std::move(items));
+      _searchResults->SetEmptyText("No YouTube results found.");
+      _searchLoading = false;
+      _searchFromCache = cached;
+      _searchResultsRule->SetLabel(
+          "RESULTS · " + std::to_string(count) + (cached ? " · cached" : ""));
+      applyView();
+      if (count > 0)
+        _widgets.Focus("search-results");
+    }
+    _statusMessage = std::to_string(count) + " YouTube result" +
+                     (count == 1 ? "" : "s") +
+                     (cached ? " loaded from the session cache." : " found.");
+    _statusIsError = false;
+  } catch (const std::exception &error) {
+    std::lock_guard lock(_widgetMtx);
+    _searchLoading = false;
+    _searchFromCache = false;
+    _searchResultItems.clear();
+    _searchResults->SetItems({});
+    _searchResults->SetEmptyText("Search failed. Edit the query and retry.");
+    _searchResultsRule->SetLabel("RESULTS · error");
+    applyView();
+    _statusMessage = error.what();
+    _statusIsError = true;
+    _widgets.Focus("search-input");
+  }
+}
+
+void Application::openSearchPlaylistPicker() {
+  if (!_store) {
+    _statusMessage = "Local storage is unavailable.";
+    _statusIsError = true;
+    return;
+  }
+  const auto result = selectedSearchResult();
+  if (!result) {
+    _statusMessage = "Select a search result first.";
+    _statusIsError = true;
+    return;
+  }
+  {
+    std::lock_guard lock(_widgetMtx);
+    _pickerTrack = core::HistoryEntry{
+        0, result->source, result->title, result->artist, {},
+        result->durationSeconds, 0, false};
+    _pickerTrackVerified = true;
+    _searchPickerOpen = true;
+    _playerPickerOpen = false;
+    applyView();
+  }
+  rebuildPlaylistPicker();
+  std::lock_guard lock(_widgetMtx);
+  _widgets.Focus(_searchPickerPlaylists.empty() ? "search-playlist-new"
+                                                : "search-playlist-list");
+}
+
+void Application::openPlayerPlaylistPicker() {
+  if (!_store) {
+    _statusMessage = "Local storage is unavailable.";
+    _statusIsError = true;
+    return;
+  }
+  const auto source = _mixer->CurrentSource();
+  if (source.empty()) {
+    _statusMessage = "Nothing heard is currently playing.";
+    _statusIsError = true;
+    return;
+  }
+  core::TrackMetadata metadata;
+  {
+    std::lock_guard lock(_playbackCtx.metadataMtx);
+    metadata = _playbackCtx.metadata;
+  }
+  if (metadata.title.empty())
+    metadata.title = _mixer->TrackName();
+  {
+    std::lock_guard lock(_widgetMtx);
+    _pickerTrack = core::HistoryEntry{
+        0, source, metadata.title, metadata.artist, metadata.album,
+        static_cast<std::int64_t>(_playbackCtx.durationFrames.load() / 44100),
+        0, false};
+    _pickerTrackVerified = false;
+    _searchPickerOpen = false;
+    _playerPickerOpen = true;
+    applyView();
+  }
+  rebuildPlaylistPicker();
+  std::lock_guard lock(_widgetMtx);
+  _widgets.Focus(_searchPickerPlaylists.empty() ? "search-playlist-new"
+                                                : "search-playlist-list");
+}
+
+void Application::rebuildPlaylistPicker() {
+  std::optional<core::HistoryEntry> pickerTrack;
+  {
+    std::lock_guard lock(_widgetMtx);
+    pickerTrack = _pickerTrack;
+  }
+  if (!_store || !pickerTrack)
+    return;
+  try {
+    auto playlists = _store->Playlists();
+    std::vector<std::int64_t> membership;
+    std::vector<tui::ListItem> items;
+    const auto sourceHash = core::LocalStore::SourceHash(pickerTrack->source);
+    for (const auto &playlist : playlists) {
+      const auto tracks = _store->PlaylistTracks(playlist.id);
+      const bool contains =
+          std::any_of(tracks.begin(), tracks.end(), [&](const auto &item) {
+            return item.sourceHash == sourceHash ||
+                   item.source == pickerTrack->source;
+          });
+      if (contains)
+        membership.push_back(playlist.id);
+      items.push_back({std::to_string(playlist.id),
+                       string(contains ? "✓ " : "  ") + playlist.name +
+                           " · " + std::to_string(playlist.trackCount)});
+    }
+    std::lock_guard lock(_widgetMtx);
+    _searchPickerPlaylists = std::move(playlists);
+    _searchPickerMembership = std::move(membership);
+    _searchPlaylistList->SetItems(std::move(items));
+    _playlistPickerRule->SetLabel(
+        "ADD TO PLAYLIST · " +
+        tui::Canvas::Clip(pickerTrack->title.empty() ? pickerTrack->source
+                                                     : pickerTrack->title,
+                          std::max(1, _lastUiWidth - 24)));
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not read playlists: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::addPickerTrackToPlaylist(std::int64_t playlistId) {
+  std::optional<core::HistoryEntry> track;
+  bool verified = false;
+  string playlistName;
+  {
+    std::lock_guard lock(_widgetMtx);
+    track = _pickerTrack;
+    verified = _pickerTrackVerified;
+    if (!playlistId) {
+      const auto selected = _searchPlaylistList->SelectedId();
+      try {
+        if (selected)
+          playlistId = std::stoll(*selected);
+      } catch (const std::exception &) {
+      }
+    }
+    const auto playlist = std::find_if(
+        _searchPickerPlaylists.begin(), _searchPickerPlaylists.end(),
+        [playlistId](const auto &item) { return item.id == playlistId; });
+    if (playlist != _searchPickerPlaylists.end())
+      playlistName = playlist->name;
+  }
+  if (!_store || !track || !playlistId) {
+    _statusMessage = "Choose a playlist first.";
+    _statusIsError = true;
+    return;
+  }
+  try {
+    const auto added = verified
+                           ? _store->AddVerifiedSourceToPlaylist(playlistId,
+                                                                 *track)
+                           : _store->AddSourceToPlaylist(playlistId, *track);
+    if (added == core::AddTrackResult::Added) {
+      _statusMessage = "✓ Added to '" + playlistName + "'.";
+      _statusIsError = false;
+      _playlistRefresh.store(true);
+    } else if (added == core::AddTrackResult::Duplicate) {
+      _statusMessage = "✓ Already in '" + playlistName + "'.";
+      _statusIsError = false;
+    } else {
+      _statusMessage = addTrackMessage(added);
+      _statusIsError = true;
+    }
+    rebuildPlaylistPicker();
+    std::lock_guard lock(_widgetMtx);
+    _searchPlaylistList->SelectId(std::to_string(playlistId));
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not add track: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
+void Application::closePlaylistPicker() {
+  std::lock_guard lock(_widgetMtx);
+  const bool searchPicker = _searchPickerOpen;
+  const bool playerPicker = _playerPickerOpen;
+  _searchPickerOpen = false;
+  _playerPickerOpen = false;
+  _pickerTrack.reset();
+  _pickerTrackVerified = false;
+  applyView();
+  if (searchPicker)
+    _widgets.Focus(_searchResultItems.empty() ? "search-input"
+                                              : "search-results");
+  else if (playerPicker)
+    _widgets.Focus("player-add-playlist");
+}
+
 std::optional<core::Playlist> Application::selectedPlaylist() {
   std::lock_guard lock(_widgetMtx);
   const auto selected = std::find_if(
@@ -538,7 +995,7 @@ std::optional<core::Playlist> Application::selectedPlaylist() {
              : std::optional<core::Playlist>(*selected);
 }
 
-void Application::beginPlaylistPrompt(bool rename) {
+void Application::beginPlaylistPrompt(bool rename, bool addPickerTrack) {
   if (!_store) {
     _statusMessage = "Local storage is unavailable.";
     _statusIsError = true;
@@ -550,8 +1007,19 @@ void Application::beginPlaylistPrompt(bool rename) {
     _statusIsError = true;
     return;
   }
+  if (addPickerTrack) {
+    std::lock_guard lock(_widgetMtx);
+    if (!_pickerTrack) {
+      _statusMessage = "Choose a track before creating its playlist.";
+      _statusIsError = true;
+      return;
+    }
+  }
   std::lock_guard lock(_widgetMtx);
-  _playlistPrompt = rename ? PlaylistPrompt::Rename : PlaylistPrompt::Create;
+  _playlistPrompt = addPickerTrack
+                        ? PlaylistPrompt::CreateAndAdd
+                        : (rename ? PlaylistPrompt::Rename
+                                  : PlaylistPrompt::Create);
   _promptPlaylistId = rename ? playlist->id : 0;
   _input->Clear();
   _input->SetPrompt(
@@ -566,8 +1034,11 @@ void Application::finishPlaylistPrompt(const string &name) {
   const auto prompt = _playlistPrompt;
   const auto playlistId = _promptPlaylistId;
   try {
-    if (prompt == PlaylistPrompt::Create) {
+    std::int64_t createdId = 0;
+    if (prompt == PlaylistPrompt::Create ||
+        prompt == PlaylistPrompt::CreateAndAdd) {
       const auto id = _store->CreatePlaylist(name);
+      createdId = id;
       {
         std::lock_guard lock(_widgetMtx);
         _selectedPlaylistId = id;
@@ -583,6 +1054,10 @@ void Application::finishPlaylistPrompt(const string &name) {
     _statusIsError = false;
     cancelPlaylistPrompt();
     _playlistRefresh.store(true);
+    if (prompt == PlaylistPrompt::CreateAndAdd) {
+      rebuildPlaylistPicker();
+      addPickerTrackToPlaylist(createdId);
+    }
   } catch (const std::exception &error) {
     _statusMessage = "Could not save playlist name: " + string(error.what());
     _statusIsError = true;
@@ -591,11 +1066,15 @@ void Application::finishPlaylistPrompt(const string &name) {
 
 void Application::cancelPlaylistPrompt() {
   std::lock_guard lock(_widgetMtx);
+  const bool returnToPicker = _playlistPrompt == PlaylistPrompt::CreateAndAdd;
   _playlistPrompt = PlaylistPrompt::None;
   _promptPlaylistId = 0;
   _input->Clear();
   _input->SetPrompt({{"termify", CYAN_BOLD}, {" › ", {}}});
-  if (_tabs->Selected() == 2)
+  if (returnToPicker && (_searchPickerOpen || _playerPickerOpen))
+    _widgets.Focus(_searchPickerPlaylists.empty() ? "search-playlist-new"
+                                                  : "search-playlist-list");
+  else if (_tabs->Selected() == 2)
     _widgets.Focus("playlist-list");
 }
 
@@ -859,17 +1338,36 @@ void Application::renderUi() {
 
   std::lock_guard widgetLock(_widgetMtx);
   configureWidgets(width);
+  string summaryDetails = "    QUEUE " + std::to_string(queueSize);
+  if (_tabs->Selected() != 0)
+    summaryDetails += "    REPEAT " + repeat + "    VOL " +
+                      std::to_string(_mixer->Volume()) + "%";
   _summary->SetSpans(
-      {{"● " + state, stateStyle},
-       {"    QUEUE " + std::to_string(queueSize) + "    REPEAT " + repeat +
-            "    VOL " + std::to_string(_mixer->Volume()) + "%",
-        MUTED}});
+      {{"● " + state, stateStyle}, {std::move(summaryDetails), MUTED}});
   _nowPlaying->SetText(tui::Canvas::Clip(nowPlaying, contentWidth), BOLD);
   _details->SetText(tui::Canvas::Clip(details, contentWidth), MUTED);
   _progress->SetProgress(ratio);
   _progress->SetLabels(formatDuration(position),
                        duration > 0 ? formatDuration(duration) : "--:--");
   _playerPlayPause->SetLabel(playing && !paused ? "|| PAUSE" : "|> PLAY");
+  _playerRepeat->SetLabel(_mixer->IsRepeatOn() ? "↻ REPEAT ON"
+                                               : "↻ REPEAT OFF");
+  _playerVolume->SetValue(_mixer->Volume());
+  if (_searchPickerOpen || _playerPickerOpen) {
+    bool alreadyAdded = false;
+    if (const auto selected = _searchPlaylistList->SelectedId()) {
+      try {
+        const auto id = std::stoll(*selected);
+        alreadyAdded =
+            std::find(_searchPickerMembership.begin(),
+                      _searchPickerMembership.end(), id) !=
+            _searchPickerMembership.end();
+      } catch (const std::exception &) {
+      }
+    }
+    _searchPlaylistAdd->SetLabel(alreadyAdded ? "✓ IN PLAYLIST"
+                                               : "✓ ADD HERE");
+  }
 
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     if (index < queue.size()) {
@@ -905,11 +1403,18 @@ void Application::renderUi() {
   _help->SetText(
       tui::Canvas::Clip(
           _tabs->Selected() == 1
-              ? "↑↓ select · Enter queue · A/add button → selected playlist"
+              ? "Enter: Play Next · double-click: Play Now · Tab: actions"
           : _tabs->Selected() == 2
               ? "Click/select lists · Tab reaches every action · Enter "
                 "activates"
-              : "Controls above · Tab focus · Enter/Space · Esc: CLI",
+          : _tabs->Selected() == 3
+              ? (_searchPickerOpen
+                     ? "✓ membership · Add/New playlist · Esc cancels"
+                     : "Type query · Enter search · select result · choose an "
+                       "action")
+              : (_playerPickerOpen
+                     ? "✓ membership · Add/New playlist · Esc cancels"
+                     : "Wheel: volume · Repeat toggle · Tab focus · Esc: CLI"),
           contentWidth),
       MUTED);
 
