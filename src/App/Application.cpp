@@ -97,10 +97,10 @@ Application::Application() {
   _nowPlaying = &_widgets.Emplace<tui::Label>("now-playing");
   _details = &_widgets.Emplace<tui::Label>("track-details");
   _progress = &_widgets.Emplace<tui::ProgressBar>("track-progress");
-  _playerPlay = &_widgets.Emplace<tui::Button>("player-play", "|>");
-  _playerPause = &_widgets.Emplace<tui::Button>("player-pause", "||");
-  _playerNext = &_widgets.Emplace<tui::Button>("player-next", ">|");
-  _playerStop = &_widgets.Emplace<tui::Button>("player-stop", "[]");
+  _playerPlayPause =
+      &_widgets.Emplace<tui::Button>("player-play-pause", "|> PLAY");
+  _playerNext = &_widgets.Emplace<tui::Button>("player-next", ">| NEXT");
+  _playerStop = &_widgets.Emplace<tui::Button>("player-stop", "[] STOP");
   _queueRule = &_widgets.Emplace<tui::Rule>("queue-rule");
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     _queueItems[index] =
@@ -196,8 +196,7 @@ void Application::runInteractiveInput() {
     bool deletePlaylist = false, addHistory = false, addCurrent = false;
     bool removeTrack = false, moveUp = false, moveDown = false;
     bool playPlaylist = false, toggleShuffle = false, toggleLoop = false;
-    bool resumePlayback = false, pausePlayback = false;
-    bool nextTrack = false, stopPlayback = false;
+    bool togglePlayback = false, nextTrack = false, stopPlayback = false;
     {
       std::lock_guard widgetLock(_widgetMtx);
       const auto oldTab = _tabs->Selected();
@@ -258,8 +257,7 @@ void Application::runInteractiveInput() {
       playPlaylist = _playlistPlay->TakeActivation();
       toggleShuffle = _playlistShuffle->TakeActivation();
       toggleLoop = _playlistLoop->TakeActivation();
-      resumePlayback = _playerPlay->TakeActivation();
-      pausePlayback = _playerPause->TakeActivation();
+      togglePlayback = _playerPlayPause->TakeActivation();
       nextTrack = _playerNext->TakeActivation();
       stopPlayback = _playerStop->TakeActivation();
       if (key && key->key == tui::Key::Character &&
@@ -296,10 +294,15 @@ void Application::runInteractiveInput() {
       togglePlaylistShuffle();
     if (toggleLoop)
       togglePlaylistLoop();
-    if (resumePlayback)
-      _mixer->Resume();
-    if (pausePlayback)
-      _mixer->Pause();
+    if (togglePlayback) {
+      if (_playbackCtx.isPaused.load())
+        _mixer->Resume();
+      else if (_playbackCtx.isPlaying.load())
+        _mixer->Pause();
+      else
+        _mixer->PublishMessage(
+            "Nothing is playing. Add a song with: play <song name>", true);
+    }
     if (nextTrack)
       _mixer->NextSong();
     if (stopPlayback)
@@ -351,13 +354,11 @@ void Application::configureWidgets(int width) {
   _nowPlaying->SetBounds({3, 6, contentWidth, 1});
   _details->SetBounds({3, 7, contentWidth, 1});
   _progress->SetBounds({3, 8, contentWidth, 1});
-  constexpr int controlWidth = 6;
+  constexpr int controlWidth = 12;
   constexpr int controlGap = 1;
-  constexpr int controlBarWidth = controlWidth * 4 + controlGap * 3;
+  constexpr int controlBarWidth = controlWidth * 3 + controlGap * 2;
   int controlColumn = width - 3 - controlBarWidth;
-  _playerPlay->SetBounds({controlColumn, 5, controlWidth, 1});
-  controlColumn += controlWidth + controlGap;
-  _playerPause->SetBounds({controlColumn, 5, controlWidth, 1});
+  _playerPlayPause->SetBounds({controlColumn, 5, controlWidth, 1});
   controlColumn += controlWidth + controlGap;
   _playerNext->SetBounds({controlColumn, 5, controlWidth, 1});
   controlColumn += controlWidth + controlGap;
@@ -389,7 +390,7 @@ void Application::applyView() {
     widget->SetVisible(playlists);
   for (auto *widget : std::vector<tui::Widget *>{
            _nowPlayingRule, _nowPlaying, _details, _progress, _queueRule,
-           _waveformRule, _waveform, _playerPlay, _playerPause, _playerNext,
+           _waveformRule, _waveform, _playerPlayPause, _playerNext,
            _playerStop})
     widget->SetVisible(!history && !playlists);
   for (auto *item : _queueItems)
@@ -868,6 +869,7 @@ void Application::renderUi() {
   _progress->SetProgress(ratio);
   _progress->SetLabels(formatDuration(position),
                        duration > 0 ? formatDuration(duration) : "--:--");
+  _playerPlayPause->SetLabel(playing && !paused ? "|| PAUSE" : "|> PLAY");
 
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     if (index < queue.size()) {
@@ -907,7 +909,7 @@ void Application::renderUi() {
           : _tabs->Selected() == 2
               ? "Click/select lists · Tab reaches every action · Enter "
                 "activates"
-              : "[|>] play · [||] pause · [>|] next · [[]] stop · Tab/Enter",
+              : "Controls above · Tab focus · Enter/Space · Esc: CLI",
           contentWidth),
       MUTED);
 

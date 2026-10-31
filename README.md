@@ -161,11 +161,11 @@ next
 
 ### Navigate the interface
 
-- The Player tab's **NOW PLAYING** divider has compact ASCII controls for
-  **PLAY** (`|>`), **PAUSE** (`||`), **NEXT** (`>|`), and **STOP** (`[]`).
-  Click one, or reach it with Tab and
-  activate it with Enter or Space. PLAY resumes paused audio; the command
-  prompt remains available for adding new songs.
+- The Player tab's **NOW PLAYING** divider has clearly labeled ASCII controls
+  for **PLAY/PAUSE**, **NEXT**, and **STOP**. The first button changes from
+  `|> PLAY` to `|| PAUSE` with playback state. Click one, or reach it with Tab
+  and activate it with Enter or Space. The command prompt remains available
+  for adding new songs.
 - The bordered file-style tabs sit above the player. A cyan dot marks the
   active view; hovering highlights a tab without taking focus from your typing.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.

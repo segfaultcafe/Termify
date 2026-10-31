@@ -19,10 +19,12 @@ The current screen is composed from `Frame`, `Rule`, `Label`, `ProgressBar`,
 Playlists share the frame, status, and command prompt. Playlist actions and the
 Player's ASCII playback controls are ordinary focusable buttons, so the same
 operation is available to mouse and keyboard users. The Player controls call
-the same mixer operations as `resume`, `pause`, `next`, and `stop`; the shared
-command prompt remains the source for queueing new songs. Their compact buttons
-overlay the right side of the `NOW PLAYING` divider, preserving the 68 × 20
-minimum layout and all three visible queue rows.
+the same mixer operations as `resume`, `pause`, `next`, and `stop`; PLAY/PAUSE
+is one state-aware button whose label and action follow the playback state. The
+shared command prompt remains the source for queueing new songs. The labeled
+buttons overlay the right side of the `NOW PLAYING` divider, preserving the
+68 × 20 minimum layout and all three visible queue rows. The help row describes
+where to find the controls without drawing a second, button-like legend.
 
 `TabBar` owns selection, arrow-key navigation, and tab hit testing. `ListView`
 owns a scrollable selection, keyboard/mouse navigation, and an activation event

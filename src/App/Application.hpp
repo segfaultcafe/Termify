@@ -90,8 +90,7 @@ private:
   tui::Label *_nowPlaying{nullptr};
   tui::Label *_details{nullptr};
   tui::ProgressBar *_progress{nullptr};
-  tui::Button *_playerPlay{nullptr};
-  tui::Button *_playerPause{nullptr};
+  tui::Button *_playerPlayPause{nullptr};
   tui::Button *_playerNext{nullptr};
   tui::Button *_playerStop{nullptr};
   tui::Rule *_queueRule{nullptr};

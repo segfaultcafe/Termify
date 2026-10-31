@@ -100,35 +100,35 @@ int main() {
   CHECK(future.Selected() == 2);
 
   WidgetHost controls;
-  auto &play = controls.Emplace<Button>("play", "|>");
-  auto &pause = controls.Emplace<Button>("pause", "||");
-  auto &next = controls.Emplace<Button>("next", ">|");
-  auto &stop = controls.Emplace<Button>("stop", "[]");
-  play.SetBounds({0, 0, 6, 1});
-  pause.SetBounds({7, 0, 6, 1});
-  next.SetBounds({14, 0, 6, 1});
-  stop.SetBounds({21, 0, 6, 1});
-  CHECK(controls.Focus("play"));
+  auto &playPause = controls.Emplace<Button>("play-pause", "|> PLAY");
+  auto &next = controls.Emplace<Button>("next", ">| NEXT");
+  auto &stop = controls.Emplace<Button>("stop", "[] STOP");
+  playPause.SetBounds({0, 0, 12, 1});
+  next.SetBounds({13, 0, 12, 1});
+  stop.SetBounds({26, 0, 12, 1});
+  CHECK(controls.Focus("play-pause"));
   CHECK(controls.Dispatch(KeyEvent{Key::Enter, {}, {}}));
-  CHECK(play.TakeActivation());
+  CHECK(playPause.TakeActivation());
   CHECK(controls.Dispatch(KeyEvent{Key::Tab, {}, {}}));
-  CHECK(controls.FocusedId() == "pause");
-  CHECK(controls.Dispatch(KeyEvent{Key::Character, " ", {}}));
-  CHECK(pause.TakeActivation());
-  CHECK(controls.Dispatch(
-      MouseEvent{MouseButton::Left, MouseAction::Press, 16, 0, {}}));
-  CHECK(next.TakeActivation());
   CHECK(controls.FocusedId() == "next");
+  CHECK(controls.Dispatch(KeyEvent{Key::Character, " ", {}}));
+  CHECK(next.TakeActivation());
   CHECK(controls.Dispatch(
-      MouseEvent{MouseButton::Left, MouseAction::Press, 23, 0, {}}));
+      MouseEvent{MouseButton::Left, MouseAction::Press, 28, 0, {}}));
   CHECK(stop.TakeActivation());
-  Canvas controlsCanvas(27, 1);
+  CHECK(controls.FocusedId() == "stop");
+  Canvas controlsCanvas(38, 1);
   controls.Render(controlsCanvas);
   std::ostringstream controlsRendered;
   controlsCanvas.Present(controlsRendered, {1, 1});
-  CHECK(controlsRendered.str().find("[ |> ]") != std::string::npos);
-  CHECK(controlsRendered.str().find("[ || ]") != std::string::npos);
-  CHECK(controlsRendered.str().find("[ >| ]") != std::string::npos);
-  CHECK(controlsRendered.str().find("[ [] ]") != std::string::npos);
+  CHECK(controlsRendered.str().find("[ |> PLAY ]") != std::string::npos);
+  CHECK(controlsRendered.str().find("[ >| NEXT ]") != std::string::npos);
+  CHECK(controlsRendered.str().find("[ [] STOP ]") != std::string::npos);
+  playPause.SetLabel("|| PAUSE");
+  Canvas pausedControlsCanvas(38, 1);
+  controls.Render(pausedControlsCanvas);
+  std::ostringstream pausedControlsRendered;
+  pausedControlsCanvas.Present(pausedControlsRendered, {1, 1});
+  CHECK(pausedControlsRendered.str().find("[ || PAUSE ]") != std::string::npos);
   return 0;
 }
