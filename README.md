@@ -155,6 +155,7 @@ Requirements:
 - FFmpeg development libraries: `libavformat`, `libavcodec`, `libavutil`, and
   `libswresample`
 - ALSA development libraries
+- `curl` and `sha256sum` to fetch and verify the bundled downloader
 
 ```bash
 git clone https://github.com/segfaultcafe/Termify.git
@@ -171,9 +172,11 @@ make package    # create the tested Linux release archive and checksum
 make install    # build, test, and install to /usr/local/bin
 ```
 
-`make package` downloads the pinned official standalone yt-dlp release, checks
-its SHA-256 digest, and includes it in the archive. This packaging step requires
-network access; ordinary source builds do not.
+`make build` and `make package` use the same pinned official standalone yt-dlp
+release and verify its SHA-256 digest. The first build downloads it into the
+project cache; subsequent builds reuse the verified copy without network access.
+Python and a separate yt-dlp installation are not required. The build reports
+the bundled downloader version so an outdated copy is easy to spot.
 
 The terminal interface is composed from reusable, keyboard- and mouse-aware
 widgets. See [docs/TUI.md](docs/TUI.md) before adding or changing interface
