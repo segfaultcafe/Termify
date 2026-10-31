@@ -26,12 +26,7 @@ bool Mixer::AddToQueue(string song) {
   if (std::filesystem::is_regular_file(song, pathError))
     song = std::filesystem::absolute(song).lexically_normal().string();
   const string displayName = song;
-  {
-    std::lock_guard playlistLock(_playlistMtx);
-    _playlistActive = false;
-    _playlistSongs.clear();
-  }
-  if (!enqueue(std::move(song))) {
+  if (!enqueue(std::move(song), true)) {
     dispatchResponse("The queue is full (20 tracks).", true);
     return false;
   }
@@ -40,8 +35,10 @@ bool Mixer::AddToQueue(string song) {
   return true;
 }
 
-bool Mixer::enqueue(string song) {
-  if (!_ctx.trackQueue->Push(std::move(song)))
+bool Mixer::enqueue(string song, bool next) {
+  const auto queued = next ? _ctx.trackQueue->PushNext(std::move(song))
+                           : _ctx.trackQueue->Push(std::move(song));
+  if (!queued)
     return false;
   _schedulerCv.notify_one();
   _prefetchCv.notify_one();
@@ -110,6 +107,15 @@ void Mixer::Resume() {
 }
 
 void Mixer::NextSong() {
+  if (_ctx.trackQueue->Empty()) {
+    bool loopPlaylist = false;
+    {
+      std::lock_guard playlistLock(_playlistMtx);
+      loopPlaylist = _playlistActive && _playlistLoop;
+    }
+    if (loopPlaylist)
+      queuePlaylistCycle();
+  }
   if (_ctx.trackQueue->Empty()) {
     dispatchResponse("There is no next track in the queue.", true);
     return;
@@ -202,13 +208,11 @@ bool Mixer::queuePlaylistCycle() {
     std::mt19937 generator(device());
     std::shuffle(songs.begin(), songs.end(), generator);
   }
-  for (auto &song : songs) {
-    if (!enqueue(std::move(song))) {
-      dispatchResponse("The queue filled before the playlist was loaded.",
-                       true);
-      return false;
-    }
+  if (!_ctx.trackQueue->PushPlaylistCycle(std::move(songs))) {
+    return false;
   }
+  _schedulerCv.notify_one();
+  _prefetchCv.notify_one();
   return true;
 }
 

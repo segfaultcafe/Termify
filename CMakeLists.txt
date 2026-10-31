@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(termify VERSION 0.3.0 LANGUAGES C CXX)
+project(termify VERSION 0.3.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -85,4 +85,14 @@ if(BUILD_TESTING)
   target_link_libraries(download_cache_tests PRIVATE ${TERMIFY_SQLITE_TARGET} PkgConfig::FFMPEG)
   target_compile_options(download_cache_tests PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME download_cache COMMAND download_cache_tests)
+
+  add_executable(mixer_order_tests tests/MixerOrderTests.cpp
+    src/Core/Mixer.cpp src/Core/SongQueue.cpp src/Core/AudioDownloader.cpp
+    src/Core/LocalStore.cpp src/Core/SourceHash.cpp src/Core/FFmpegDecoder.cpp
+    src/Core/RingBuffer.cpp)
+  target_include_directories(mixer_order_tests PRIVATE src)
+  target_link_libraries(mixer_order_tests PRIVATE ${TERMIFY_SQLITE_TARGET}
+    PkgConfig::FFMPEG ${ALSA_LIBRARIES})
+  target_compile_options(mixer_order_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME mixer_order COMMAND mixer_order_tests)
 endif()

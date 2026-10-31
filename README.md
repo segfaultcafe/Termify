@@ -23,8 +23,12 @@
 - Clean cancellation, temporary-file cleanup, and readable error messages
 - Self-contained online fetching: no Python or separate yt-dlp installation
 
-New in **v0.3.0**: persistent play history, a reusable audio cache, and
-keyboard- and mouse-friendly tabs.
+Coming in **v0.3.1**: playlist playback now advances correctly with `next`,
+playlist loops remain active, and manually queued tracks play before the
+remaining playlist while preserving their enqueue order.
+
+The latest packaged release is **v0.3.0**, which introduced persistent play
+history, a reusable audio cache, and keyboard- and mouse-friendly tabs.
 
 ## Install the Linux release
 
@@ -127,7 +131,7 @@ Then enter commands at the `termify ›` prompt:
 
 | Command | Description |
 | --- | --- |
-| `play <name, URL, or file>` | Add a track and start playback |
+| `play <name, URL, or file>` | Play if idle, otherwise queue the track next |
 | `pause` / `resume` | Pause or resume the current track |
 | `next` | Skip to the next queued track |
 | `repeat` | Toggle repeating the current track |
@@ -213,6 +217,9 @@ truth and never copies audio into a playlist.
 **SHUFFLE** randomizes the order each time the playlist starts and for every
 new loop. **LOOP** repeats the whole playlist independently of the `repeat`
 command for one track. Starting a playlist disables single-track repeat.
+Tracks added with `play` while a playlist is active are inserted ahead of the
+remaining playlist tracks without ending the playlist session. Multiple manual
+additions retain their enqueue order.
 Removing a track or deleting a playlist does not delete cached audio. If a
 cache entry is later evicted, the saved canonical URL lets Termify fetch it
 again when the playlist is played.

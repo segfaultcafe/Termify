@@ -3,17 +3,54 @@
 
 namespace termify::core {
 
+namespace {
+QueuedSong makeQueuedSong(uint64 id, string song, QueueOrigin origin) {
+  QueuedSong queued;
+  queued.id = id;
+  queued.query = std::move(song);
+  queued.origin = origin;
+  return queued;
+}
+} // namespace
+
 std::optional<uint64> SongQueue::Push(string song) {
   std::lock_guard lock(_queueMtx);
   if (song.empty() || _queue.size() >= MAX_SONGS) {
     return std::nullopt;
   }
   const uint64 id = _nextId++;
-  QueuedSong queued;
-  queued.id = id;
-  queued.query = std::move(song);
-  _queue.push_back(std::move(queued));
+  _queue.push_back(makeQueuedSong(id, std::move(song), QueueOrigin::Manual));
   return id;
+}
+
+std::optional<uint64> SongQueue::PushNext(string song) {
+  std::lock_guard lock(_queueMtx);
+  if (song.empty() || _queue.size() >= MAX_SONGS) {
+    return std::nullopt;
+  }
+  const uint64 id = _nextId++;
+  const auto firstPlaylist =
+      std::find_if(_queue.begin(), _queue.end(), [](const auto &item) {
+        return item.origin == QueueOrigin::Playlist;
+      });
+  _queue.insert(firstPlaylist,
+                makeQueuedSong(id, std::move(song), QueueOrigin::Manual));
+  return id;
+}
+
+bool SongQueue::PushPlaylistCycle(vector<string> songs) {
+  std::lock_guard lock(_queueMtx);
+  if (songs.empty() || !_queue.empty() || songs.size() > MAX_SONGS ||
+      std::any_of(songs.begin(), songs.end(),
+                  [](const auto &song) { return song.empty(); })) {
+    return false;
+  }
+  for (auto &song : songs) {
+    const uint64 id = _nextId++;
+    _queue.push_back(
+        makeQueuedSong(id, std::move(song), QueueOrigin::Playlist));
+  }
+  return true;
 }
 
 std::optional<QueuedSong> SongQueue::PopForPlayback() {

@@ -61,5 +61,22 @@ int main() {
   const auto cleared = queue.Clear();
   CHECK(cleared.size() == SongQueue::MAX_SONGS);
   CHECK(queue.Empty());
+
+  CHECK(queue.PushPlaylistCycle({"playlist-a", "playlist-b"}));
+  CHECK(!queue.PushPlaylistCycle({"duplicate-cycle"}));
+  CHECK(queue.PushNext("manual-one"));
+  CHECK(queue.PushNext("manual-two"));
+  const auto prioritized = queue.Snapshot(4);
+  CHECK(prioritized.size() == 4);
+  CHECK(prioritized[0].query == "manual-one");
+  CHECK(prioritized[1].query == "manual-two");
+  CHECK(prioritized[2].query == "playlist-a");
+  CHECK(prioritized[3].query == "playlist-b");
+  CHECK(prioritized[0].origin == termify::core::QueueOrigin::Manual);
+  CHECK(prioritized[2].origin == termify::core::QueueOrigin::Playlist);
+
+  queue.Clear();
+  CHECK(!queue.PushPlaylistCycle({"valid", ""}));
+  CHECK(queue.Empty());
   return 0;
 }

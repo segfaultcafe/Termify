@@ -86,14 +86,16 @@ Released in v0.3.0:
 - The verified bundled-downloader fix retained from the discarded cassette
   branch. The decorative cassette feature is no longer planned.
 
-The playlist MVP for the next release is implemented on the same widget and
-storage foundations:
+The playlist MVP for v0.3.1 is implemented on the same widget and storage
+foundations:
 
 - Create, rename, and safely delete local playlists.
 - Add cached, previously heard songs by canonical URL hash; remove and reorder
   entries; play an entire bounded playlist.
 - Add songs from History and the current track without retyping the source.
 - Shuffle playback and loop the whole playlist independently of track repeat.
+- Keep playlist order active across `next` and prioritize manually queued
+  tracks before the remaining playlist without discarding the session.
 - Operate every playlist action with either mouse or keyboard.
 
 Still next:

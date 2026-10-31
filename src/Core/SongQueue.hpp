@@ -9,12 +9,14 @@
 namespace termify::core {
 
 enum class QueueState { Pending, Downloading, Ready, Failed };
+enum class QueueOrigin { Manual, Playlist };
 
 struct QueuedSong {
   uint64 id{0};
   string query;
   string source;
   QueueState state{QueueState::Pending};
+  QueueOrigin origin{QueueOrigin::Manual};
   string preparedPath;
   bool temporary{false};
   string error;
@@ -26,6 +28,8 @@ public:
   static constexpr std::size_t MAX_SONGS = 20;
 
   std::optional<uint64> Push(string song);
+  std::optional<uint64> PushNext(string song);
+  bool PushPlaylistCycle(vector<string> songs);
   std::optional<QueuedSong> PopForPlayback();
   std::optional<QueuedSong> ClaimForPrefetch();
   bool MarkReady(uint64 id, string path, string source, bool temporary,

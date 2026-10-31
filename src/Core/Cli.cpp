@@ -8,7 +8,8 @@ namespace {
 std::optional<string> commandHelp(const string &topic) {
   switch (StringToCommand(topic)) {
   case Command::PLAY:
-    return "play <song, URL, or local file> — add a track to the queue";
+    return "play <song, URL, or local file> — play if idle, otherwise queue "
+           "next";
   case Command::PAUSE:
     return "pause — pause the current track";
   case Command::RESUME:

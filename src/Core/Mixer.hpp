@@ -40,7 +40,7 @@ private:
   void prefetchLoop();
   void startNext();
   bool queuePlaylistCycle();
-  bool enqueue(string song);
+  bool enqueue(string song, bool next = false);
   void clearQueue(bool cancelPlaylist);
   static void cleanupPrepared(const QueuedSong &song);
   void dispatchResponse(const string &message, bool isError = false);
