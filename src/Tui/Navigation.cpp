@@ -13,6 +13,23 @@ void TabBar::Select(std::size_t index) {
     _selected = std::min(index, _labels.size() - 1);
 }
 
+std::optional<std::size_t> TabBar::TabAt(Point point) const {
+  if (!Bounds().Contains(point) || point.row >= Bounds().row + 3)
+    return std::nullopt;
+  int column = Bounds().column;
+  for (std::size_t index = 0; index < _labels.size(); ++index) {
+    const int width = static_cast<int>(Canvas::TextWidth(_labels[index])) + 6;
+    if (point.column >= column && point.column < column + width)
+      return index;
+    column += width + 1;
+  }
+  return std::nullopt;
+}
+
+void TabBar::SetPointer(std::optional<Point> point) {
+  _hovered = point ? TabAt(*point) : std::nullopt;
+}
+
 bool TabBar::Handle(const Event &event) {
   if (_labels.empty())
     return false;
@@ -37,32 +54,52 @@ bool TabBar::Handle(const Event &event) {
   if (const auto *mouse = std::get_if<MouseEvent>(&event);
       mouse && mouse->action == MouseAction::Press &&
       mouse->button == MouseButton::Left) {
-    int column = Bounds().column;
-    for (std::size_t index = 0; index < _labels.size(); ++index) {
-      const int width = static_cast<int>(Canvas::TextWidth(_labels[index])) + 4;
-      if (mouse->column >= column && mouse->column < column + width) {
-        Select(index);
-        return true;
-      }
-      column += width + 2;
+    if (const auto index = TabAt({mouse->column, mouse->row})) {
+      Select(*index);
+      return true;
     }
   }
   return false;
 }
 
 void TabBar::Render(Canvas &canvas) const {
+  const auto bounds = Bounds();
+  if (bounds.height <= 0 || bounds.width <= 0)
+    return;
   int offset = 0;
   for (std::size_t index = 0; index < _labels.size(); ++index) {
     const bool selected = index == _selected;
-    const std::string label =
-        selected ? "[ " + _labels[index] + " ]" : "  " + _labels[index] + "  ";
-    const Style style{selected ? Color::Cyan : Color::Muted,
-                      selected && Focused()};
-    offset += canvas.Text({Bounds().column + offset, Bounds().row}, label,
-                          style, std::max(0, Bounds().width - offset));
-    offset += canvas.Text({Bounds().column + offset, Bounds().row}, "  ", {},
-                          std::max(0, Bounds().width - offset));
+    const bool hovered = _hovered == index;
+    const int width = static_cast<int>(Canvas::TextWidth(_labels[index])) + 6;
+    const Style border{hovered    ? Color::Yellow
+                       : selected ? Color::Cyan
+                                  : Color::Muted,
+                       selected || hovered};
+    const Style labelStyle{hovered    ? Color::Yellow
+                           : selected ? Color::Cyan
+                                      : Color::Default,
+                           selected || hovered};
+    std::string line;
+    for (int cell = 0; cell < width - 2; ++cell)
+      line += "─";
+    const std::string label = "│ " +
+                              std::string(selected  ? "● "
+                                          : hovered ? "› "
+                                                    : "  ") +
+                              _labels[index] + " │";
+    const std::string rows[] = {"╭" + line + "╮", label, "╰" + line + "╯"};
+    for (int row = 0; row < std::min(3, bounds.height); ++row)
+      canvas.Text({bounds.column + offset, bounds.row + row}, rows[row],
+                  row == 1 ? labelStyle : border,
+                  std::max(0, bounds.width - offset));
+    offset += width + 1;
   }
+  const std::string hint =
+      Focused() ? "←/→ switch · Tab: content" : "Click a tab · Alt+←/→";
+  if (bounds.height >= 2 &&
+      bounds.width - offset >= static_cast<int>(Canvas::TextWidth(hint)) + 2)
+    canvas.Text({bounds.column + offset + 2, bounds.row + 1}, hint,
+                {Color::Muted});
 }
 
 ListView::ListView(std::string id) : Widget(std::move(id)) {}

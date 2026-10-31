@@ -1,6 +1,7 @@
 #include "Tui/Navigation.hpp"
 #include "Tui/Widgets.hpp"
 #include <iostream>
+#include <sstream>
 
 using namespace termify::tui;
 #define CHECK(condition)                                                       \
@@ -17,9 +18,26 @@ int main() {
       "tabs", std::vector<std::string>{"PLAYER", "HISTORY"});
   auto &list = host.Emplace<ListView>("list");
   auto &input = host.Emplace<TextInput>("input");
-  tabs.SetBounds({0, 0, 50, 1});
-  list.SetBounds({0, 2, 50, 3});
-  input.SetBounds({0, 6, 50, 1});
+  tabs.SetBounds({0, 0, 70, 3});
+  list.SetBounds({0, 4, 50, 3});
+  input.SetBounds({0, 8, 50, 1});
+  CHECK(host.Focus("input"));
+  host.Dispatch(MouseEvent{MouseButton::None, MouseAction::Move, 15, 1, {}});
+  CHECK(tabs.Hovered() == 1 && tabs.Selected() == 0);
+  CHECK(host.FocusedId() == "input"); // Hover never steals typing focus.
+  Canvas hover(70, 9);
+  host.Render(hover);
+  std::ostringstream rendered;
+  hover.Present(rendered, {1, 1});
+  CHECK(rendered.str().find("› HISTORY") != std::string::npos);
+  CHECK(rendered.str().find("Click a tab") != std::string::npos);
+  host.Dispatch(MouseEvent{MouseButton::None, MouseAction::Move, 12, 1, {}});
+  CHECK(!tabs.Hovered()); // Gap between tabs.
+  host.Dispatch(MouseEvent{MouseButton::None, MouseAction::Move, 15, 1, {}});
+  host.Dispatch(MouseEvent{MouseButton::None, MouseAction::Move, 80, 10, {}});
+  CHECK(!tabs.Hovered()); // Pointer leaves the entire host.
+  CHECK(!tabs.Handle(
+      MouseEvent{MouseButton::Left, MouseAction::Press, 15, 3, {}}));
   CHECK(host.Focus("tabs"));
   CHECK(host.Dispatch(KeyEvent{Key::ArrowRight, {}, {}}));
   CHECK(tabs.Selected() == 1);
@@ -47,10 +65,10 @@ int main() {
   CHECK(host.Dispatch(KeyEvent{Key::End, {}, {}}));
   CHECK(list.SelectedId() == "4");
   CHECK(host.Dispatch(
-      MouseEvent{MouseButton::Left, MouseAction::Press, 1, 2, {}}));
+      MouseEvent{MouseButton::Left, MouseAction::Press, 1, 4, {}}));
   CHECK(list.SelectedId() == "2"); // Click the first visible scrolled row.
   CHECK(host.Dispatch(
-      MouseEvent{MouseButton::WheelUp, MouseAction::Scroll, 1, 2, {}}));
+      MouseEvent{MouseButton::WheelUp, MouseAction::Scroll, 1, 4, {}}));
   CHECK(list.SelectedId() == "1");
   list.SetVisible(false);
   CHECK(!host.Dispatch(KeyEvent{Key::Enter, {}, {}}));
@@ -60,5 +78,14 @@ int main() {
   CHECK(input.Value() == "play");
   list.SetItems({});
   CHECK(!list.SelectedId());
+  TabBar future("three-tabs", {"PLAYER", "HISTORY", "PLAYLISTS"});
+  future.SetBounds({0, 0, 70, 3});
+  CHECK(future.Handle(KeyEvent{Key::ArrowLeft, {}, {}}));
+  CHECK(future.Selected() == 2);
+  CHECK(future.Handle(KeyEvent{Key::ArrowRight, {}, {}}));
+  CHECK(future.Selected() == 0);
+  CHECK(future.Handle(
+      MouseEvent{MouseButton::Left, MouseAction::Press, 30, 1, {}}));
+  CHECK(future.Selected() == 2);
   return 0;
 }

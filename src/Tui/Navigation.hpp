@@ -11,12 +11,16 @@ public:
   bool Focusable() const override { return true; }
   void Select(std::size_t index);
   std::size_t Selected() const { return _selected; }
+  std::optional<std::size_t> Hovered() const { return _hovered; }
+  void SetPointer(std::optional<Point> point) override;
   bool Handle(const Event &event) override;
   void Render(Canvas &canvas) const override;
 
 private:
+  std::optional<std::size_t> TabAt(Point point) const;
   std::vector<std::string> _labels;
   std::size_t _selected{0};
+  std::optional<std::size_t> _hovered;
 };
 
 struct ListItem {

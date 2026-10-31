@@ -24,6 +24,12 @@ owns a scrollable selection, keyboard/mouse navigation, and an activation event
 consumed by the application. Stable item IDs preserve the selected play when
 new rows arrive. Widgets receive display data, not database or mixer objects.
 
+The three-row file-style tab strip sits above the shared player frame. Its
+active marker, bordered inactive tabs, hover color, and inline navigation hint
+make click targets visible without relying on mouse support. `WidgetHost`
+delivers pointer locations through `SetPointer` and clears them on leave or
+keyboard input. Pointer movement never changes focus or activates a tab.
+
 ## Adding a widget
 
 Derive from `Widget`, update only the cells inside `Bounds()`, and return `true`
@@ -54,7 +60,8 @@ translates them to view coordinates before dispatch.
 Keyboard events preserve modifiers and distinguish navigation, editing,
 activation, tab traversal, interruption, and text. Mouse events distinguish
 press, release, movement, and wheel scrolling. SGR mouse reporting is enabled
-only while the interactive terminal session is active.
+only while the interactive terminal session is active. All-motion mouse reports
+enable hover; both motion tracking and SGR reporting are disabled on exit.
 
 Alt+Left/Right switches views globally. Tab/Shift+Tab cycles visible focusable
 widgets, and Escape focuses the command prompt. Left/right arrows on the tab

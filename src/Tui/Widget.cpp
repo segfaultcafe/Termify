@@ -10,11 +10,15 @@ Widget::Widget(std::string id) : _id(std::move(id)) {}
 const std::string &Widget::Id() const { return _id; }
 const Rect &Widget::Bounds() const { return _bounds; }
 void Widget::SetBounds(Rect bounds) { _bounds = bounds; }
-void Widget::SetVisible(bool visible) { _visible = visible; }
+void Widget::SetVisible(bool visible) {
+  _visible = visible;
+  if (!visible) SetPointer(std::nullopt);
+}
 bool Widget::Visible() const { return _visible; }
 bool Widget::Handle(const Event &) { return false; }
 bool Widget::Focusable() const { return false; }
 void Widget::SetFocused(bool focused) { _focused = focused; }
+void Widget::SetPointer(std::optional<Point>) {}
 std::optional<Point> Widget::Cursor() const { return std::nullopt; }
 bool Widget::Focused() const { return _focused; }
 
@@ -30,6 +34,10 @@ bool WidgetHost::Dispatch(const Event &event) {
   if (_focused && !_focused->Visible()) SetFocused(nullptr);
   if (const auto *mouse = std::get_if<MouseEvent>(&event)) {
     Widget *target = HitTest({mouse->column, mouse->row});
+    for (auto &widget : _widgets) {
+      widget->SetPointer(widget.get() == target
+          ? std::optional<Point>{{mouse->column, mouse->row}} : std::nullopt);
+    }
     if (!target)
       return false;
     if (mouse->action == MouseAction::Press && target->Focusable()) {
@@ -41,6 +49,7 @@ bool WidgetHost::Dispatch(const Event &event) {
   const auto *key = std::get_if<KeyEvent>(&event);
   if (!key)
     return false;
+  for (auto &widget : _widgets) widget->SetPointer(std::nullopt);
   if (key->key == Key::Tab)
     return CycleFocus(1);
   if (key->key == Key::BackTab)

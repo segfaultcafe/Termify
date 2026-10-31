@@ -29,6 +29,8 @@ public:
   virtual bool Handle(const Event &event);
   virtual bool Focusable() const;
   virtual void SetFocused(bool focused);
+  // Local canvas coordinates; nullopt means the pointer left this widget.
+  virtual void SetPointer(std::optional<Point> point);
   virtual std::optional<Point> Cursor() const;
 
 protected:

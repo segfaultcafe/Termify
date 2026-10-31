@@ -149,6 +149,8 @@ next
 
 ### Navigate the interface
 
+- The bordered file-style tabs sit above the player. A cyan dot marks the
+  active view; hovering highlights a tab without taking focus from your typing.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
 - **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
   bar is focused; **Esc** returns to the command prompt.

@@ -148,7 +148,7 @@ void Application::runInteractiveInput() {
         _widgets.Focus("command-input");
       } else if (key && key->modifiers.alt &&
                  (key->key == tui::Key::ArrowLeft || key->key == tui::Key::ArrowRight)) {
-        _tabs->Select(1 - _tabs->Selected());
+        _tabs->Handle(*event);
         _widgets.Focus("tabs");
       } else {
         _widgets.Dispatch(*event);
@@ -183,26 +183,26 @@ void Application::runStreamInput() {
 
 void Application::configureWidgets(int width) {
   const int contentWidth = width - 6;
-  _frame->SetBounds({0, 0, width, 17});
-  _summary->SetBounds({3, 1, contentWidth, 1});
-  _tabs->SetBounds({3, 2, contentWidth, 1});
-  _historyRule->SetBounds({0, 3, width, 1});
-  _historyList->SetBounds({3, 4, contentWidth, 9});
-  _nowPlayingRule->SetBounds({0, 3, width, 1});
-  _nowPlaying->SetBounds({3, 4, contentWidth, 1});
-  _details->SetBounds({3, 5, contentWidth, 1});
-  _progress->SetBounds({3, 6, contentWidth, 1});
-  _queueRule->SetBounds({0, 7, width, 1});
+  _tabs->SetBounds({0, 0, width, 3});
+  _frame->SetBounds({0, 3, width, 16});
+  _summary->SetBounds({3, 4, contentWidth, 1});
+  _historyRule->SetBounds({0, 5, width, 1});
+  _historyList->SetBounds({3, 6, contentWidth, 9});
+  _nowPlayingRule->SetBounds({0, 5, width, 1});
+  _nowPlaying->SetBounds({3, 6, contentWidth, 1});
+  _details->SetBounds({3, 7, contentWidth, 1});
+  _progress->SetBounds({3, 8, contentWidth, 1});
+  _queueRule->SetBounds({0, 9, width, 1});
   for (std::size_t index = 0; index < _queueItems.size(); ++index) {
     _queueItems[index]->SetBounds(
-        {3, 8 + static_cast<int>(index), contentWidth, 1});
+        {3, 10 + static_cast<int>(index), contentWidth, 1});
   }
-  _waveformRule->SetBounds({0, 11, width, 1});
-  _waveform->SetBounds({3, 12, contentWidth, 1});
-  _separator->SetBounds({0, 13, width, 1});
-  _status->SetBounds({3, 14, contentWidth, 1});
-  _help->SetBounds({3, 15, contentWidth, 1});
-  _input->SetBounds({0, 17, width, 1});
+  _waveformRule->SetBounds({0, 13, width, 1});
+  _waveform->SetBounds({3, 14, contentWidth, 1});
+  _separator->SetBounds({0, 15, width, 1});
+  _status->SetBounds({3, 16, contentWidth, 1});
+  _help->SetBounds({3, 17, contentWidth, 1});
+  _input->SetBounds({0, 19, width, 1});
 }
 
 void Application::applyView() {
@@ -265,18 +265,18 @@ void Application::renderUi() {
 
   const int columns = terminalWidth();
   const int rows = terminalHeight();
-  if (columns < 42 || rows < 18) {
+  if (columns < 42 || rows < 20) {
     std::lock_guard outputLock(_visualizationCtx.coutMtx);
     std::cout << "\033[2J";
     tui::Canvas notice(std::max(1, columns - 1), std::max(1, rows - 1));
-    notice.Text({0, 0}, "Resize terminal to at least 42 x 18", YELLOW);
+    notice.Text({0, 0}, "Resize terminal to at least 42 x 20", YELLOW);
     notice.Present(std::cout, {1, 1});
     _lastUiWidth = 0;
     return;
   }
   const int width = std::min(120, std::max(40, columns - 4));
   const int left = std::max(1, (columns - width) / 2 + 1);
-  const int top = std::max(1, (rows - 18) / 2 + 1);
+  const int top = std::max(1, (rows - 20) / 2 + 1);
   _visualizationCtx.uiLeftColumn.store(left);
   _visualizationCtx.uiTopRow.store(top);
   const int contentWidth = width - 6;
@@ -367,11 +367,11 @@ void Application::renderUi() {
   _help->SetText(tui::Canvas::Clip(
                      _tabs->Selected() == 1
                        ? "↑↓ select · Enter queue · Tab focus · Esc prompt"
-                       : "play · pause · next · volume · history · Tab: tabs",
+                       : "Click tabs · Alt+←/→ switch · Tab focus · help: commands",
                      contentWidth),
                  MUTED);
 
-  tui::Canvas canvas(width, 18);
+  tui::Canvas canvas(width, 20);
   _widgets.Render(canvas);
 
   std::lock_guard outputLock(_visualizationCtx.coutMtx);
