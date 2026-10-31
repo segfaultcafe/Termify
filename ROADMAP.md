@@ -16,6 +16,22 @@ terminal or system in a broken state.
 - Publish verified checksums and bundled-dependency license information.
 - Add native `.deb`, `.rpm`, and AUR packages where they improve integration.
 
+### Safe updates
+
+- Provide `termify update --check` to report available releases without making
+  changes.
+- Provide an explicit `termify update` flow for user-local and AppImage
+  installations; never update silently in the background.
+- Verify downloaded artifacts with published checksums and release signatures
+  before installation.
+- Replace executables atomically, retain the previous working version, and
+  support a simple rollback after a failed update.
+- Update the bundled yt-dlp independently when extractor fixes are needed,
+  without requiring a full Termify release.
+- Detect package-managed installations and direct users to their package
+  manager instead of overwriting managed files.
+- Back up and migrate configuration safely when its schema changes.
+
 ### Daily usability
 
 - Keep queue prefetching bounded and avoid duplicate downloads.
@@ -50,7 +66,8 @@ terminal or system in a broken state.
 - **v0.5 — Daily usability:** add seeking, shortcuts, persistent settings,
   history, playlists, and favorites.
 - **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
-  and test packages on clean supported distributions.
+  add verified update checks and rollback, and test packages on clean supported
+  distributions.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a
