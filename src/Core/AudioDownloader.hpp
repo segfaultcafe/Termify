@@ -5,13 +5,21 @@
 
 namespace termify::core {
 
+struct PreparedAudio {
+  string path;
+  bool temporary{false};
+};
+
 class YtDlpManager {
 
 public:
   static YtDlpManager &Self();
   bool Init();
 
-  string DownloadAudioToFile(const string &query);
+  PreparedAudio PrepareAudio(const string &query,
+                             const atomic_bool *cancel = nullptr);
+  string DownloadAudioToFile(const string &query,
+                             const atomic_bool *cancel = nullptr);
 
 private:
   YtDlpManager() = default;

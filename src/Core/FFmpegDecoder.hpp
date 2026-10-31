@@ -10,11 +10,11 @@ class FFmpegDecoder {
 public:
   explicit FFmpegDecoder(AtomicContext &ctx);
 
-  void Stream(const string &query);
+  void Stream(const string &source, const string &displayName);
 
 private:
-  string downloadAudio(const string &query);
   int init(const string &source, AVCodecContext **ppCodecCtx);
+  void publishStreamInfo(const string &displayName, int streamIndex);
   void resampleStereo(AVCodecContext *codecCtx);
   void openAlsa(snd_pcm_t **ppPcm);
   void decodeResample(AVCodecContext *codecCtx, AVPacket *pkt, AVFrame *frame,
@@ -24,11 +24,8 @@ private:
 
 private:
   AtomicContext &_ctx;
-  AVFormatContext *_fmtCtx;
-  SwrContext *_swr;
-  std::thread _consumer;
-
-  bool _deleteAfter = false;
+  AVFormatContext *_fmtCtx{nullptr};
+  SwrContext *_swr{nullptr};
 };
 
 } // namespace termify::core

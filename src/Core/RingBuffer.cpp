@@ -15,10 +15,13 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
       break;
     std::unique_lock lk(ringBufferCtx->ringMtx);
     ringBufferCtx->ringCv.wait(lk, [&]() {
-      return ringBufferCtx->decodeFinished.load() ||
+      return playbackCtx->shouldStop.load() ||
+             ringBufferCtx->decodeFinished.load() ||
              ringBufferCtx->writeIndex.load() !=
                  ringBufferCtx->readIndex.load();
     });
+    if (playbackCtx->shouldStop.load())
+      break;
     uint64 rb = ctx.ringBufferCtx->ringBuffer.size();
     uint64 wi = ctx.ringBufferCtx->writeIndex.load(),
            ri = ctx.ringBufferCtx->readIndex.load();
@@ -41,6 +44,14 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
     if (playbackCtx->shouldStop.load())
       break;
 
+    const int volume = playbackCtx->volumePercent.load();
+    if (volume != 100) {
+      for (auto &sample : chunk) {
+        const int scaled = static_cast<int>(sample) * volume / 100;
+        sample = static_cast<int16>(std::clamp(scaled, -32768, 32767));
+      }
+    }
+
     // update vis
     {
       std::lock_guard<std::mutex> vl(visualCtx->visMtx);
@@ -49,7 +60,6 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
     }
 
     while (playbackCtx->isPaused.load()) {
-      playbackCtx->isPlaying.store(false);
       std::unique_lock plk(playbackCtx->pauseMtx);
       playbackCtx->pauseCv.wait(plk, [&]() {
         return !playbackCtx->isPaused.load() || playbackCtx->shouldStop.load();
@@ -75,6 +85,7 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
       }
       frames -= w;
       off += w;
+      playbackCtx->positionFrames.fetch_add(static_cast<uint64>(w));
     }
   }
 }

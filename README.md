@@ -1,90 +1,186 @@
-![Termify Screenshot](./assets/termify.png)
-# Termify
+<p align="center">
+  <img src="assets/termify.png" alt="Termify playing a track in a terminal" width="100%">
+</p>
 
-**Termify** is a terminal-based YouTube audio player written in modern C++, featuring a real-time waveform visualizer. It allows you to search and stream audio from YouTube with a minimal, responsive interface powered by FFmpeg and ALSA.  
+<h1 align="center">Termify</h1>
 
----
+<p align="center">
+  A focused terminal audio player for Linux, built with modern C++, FFmpeg,
+  ALSA, and an included standalone yt-dlp.
+</p>
 
-## Features
+## Highlights
 
-- Play audio from YouTube directly from your terminal
-- Search support via `yt-dlp`
-- Real-time waveform visualization using terminal bars
-- Asynchronous decoding and playback
-- Ring buffer for smooth streaming
-- Fully written in modern C++ with no external GUI dependencies
+- Search for music, paste a supported URL, or play a local audio file
+- Responsive, centered terminal interface with a live waveform
+- Title, artist, album, elapsed time, duration, and playback progress
+- Bounded 20-track queue with one-at-a-time background prefetching
+- Pause, resume, skip, repeat, stop, and software volume control
+- Editable Unicode-aware input with cursor movement and deletion
+- Clean cancellation, temporary-file cleanup, and readable error messages
+- Self-contained online fetching: no Python or separate yt-dlp installation
 
----
+## Install the Linux release
 
-## Planned Features
-
-- Song queueing and repeat modes
-- Skip 
-- Volume control
-- Intelligent caching
-- Playlist support
-- Multiplatform support (only Linux for now)
-- Graceful shutdown and error handling
-
----
-
-## Dependencies
-
-- [FFmpeg](https://ffmpeg.org)
-- [ALSA](https://alsa-project.org)
-
----
-
-## Building from Source
-
-### Requirements
-
-- **FOR NOW IT ONLY WORK FOR LINUX**
-- A C++23-compatible compiler (e.g. `g++ 11+` or `clang++ 13+`)
-- CMake 3.16+
-- FFmpeg dev libraries (`libavformat`, `libavcodec`, etc.)
-- ALSA dev libraries (`libasound2-dev`)
-- `yt-dlp` (either in `PATH` or placed in project root or bin folder)
-
-### Build Instructions
+Download `termify-v0.2.0-linux-x86_64.tar.gz` and its checksum from the
+[v0.2.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.2.0).
 
 ```bash
-git clone https://github.com/alexbsec/termify.git
-cd termify
-chmod +x ./scripts/build.sh
+sha256sum -c termify-v0.2.0-linux-x86_64.tar.gz.sha256
+tar -xzf termify-v0.2.0-linux-x86_64.tar.gz
+cd termify-v0.2.0-linux-x86_64
+./install.sh
+```
+
+The installer places `termify` in `~/.local/bin` by default. You can also pass
+an installation prefix explicitly. For a system-wide installation:
+
+```bash
+sudo ./install.sh /usr/local
+```
+
+The archive includes the official standalone `yt-dlp` 2026.10.26 executable.
+The installer keeps it private in `~/.local/lib/termify`, so it does not replace
+or interfere with a system installation. Python and a separate yt-dlp install
+are not required.
+
+### Distribution setup
+
+Termify uses FFmpeg libraries for decoding and ALSA for audio output. Install
+those runtime dependencies before running the release:
+
+**Arch Linux / Manjaro**
+
+```bash
+sudo pacman -S ffmpeg alsa-lib
+```
+
+**Fedora**
+
+```bash
+sudo dnf install ffmpeg-free alsa-lib
+```
+
+**Debian / Ubuntu / Linux Mint**
+
+```bash
+sudo apt update
+sudo apt install ffmpeg libasound2
+```
+
+On Debian 13 and newer, `libasound2` may be provided by `libasound2t64` and is
+normally selected automatically.
+
+**openSUSE**
+
+```bash
+sudo zypper install ffmpeg libasound2
+```
+
+Then use the same checksum, extraction, and `./install.sh` commands shown
+above. The v0.2.0 prebuilt binary is produced on x86_64 Arch Linux and expects
+FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
+`libavutil.so.61`, and `libswresample.so.7`). It is directly compatible with
+current rolling distributions that provide those libraries. On distributions
+with an older FFmpeg ABI, use the source-build instructions below; the build
+will link against that distribution's native FFmpeg version.
+
+Alpine uses musl rather than glibc, and NixOS does not expose system libraries
+through the standard filesystem layout. For those systems, build from source
+inside the native package environment instead of using this glibc archive.
+
+## Bundled online playback
+
+Online search and URL playback work immediately with the yt-dlp included in the
+release. Termify checks its private bundled copy automatically. To test it from
+an extracted archive:
+
+```bash
+./yt-dlp --version
+```
+
+Advanced users can override the bundled executable without modifying Termify:
+
+```bash
+TERMIFY_YTDLP=/absolute/path/to/another/yt-dlp termify
+```
+
+## Quick start
+
+Start the interface:
+
+```bash
+termify
+```
+
+Then enter commands at the `termify ›` prompt:
+
+| Command | Description |
+| --- | --- |
+| `play <name, URL, or file>` | Add a track and start playback |
+| `pause` / `resume` | Pause or resume the current track |
+| `next` | Skip to the next queued track |
+| `repeat` | Toggle repeating the current track |
+| `volume 60` | Set volume from 0 to 100 percent |
+| `volume +10` / `volume -10` | Adjust volume relative to its current level |
+| `queue` | Show the number of queued tracks |
+| `clear` | Clear upcoming tracks |
+| `stop` | Stop playback and clear the queue |
+| `help` | Show the interactive command list |
+| `help <command>` | Show focused usage, such as `help volume` |
+| `exit` | Leave Termify cleanly |
+
+Examples:
+
+```text
+play daft punk veridis quo
+play https://www.youtube.com/watch?v=...
+play /home/me/Music/song.flac
+volume 65
+next
+```
+
+Queued online tracks are prefetched for the current session. Downloads are
+removed after playback or when the queue is cleared.
+
+## Build from source
+
+Requirements:
+
+- Linux with PipeWire or an ALSA-compatible playback device
+- CMake 3.16 or newer
+- A C++23-capable compiler
+- `pkg-config`
+- FFmpeg development libraries: `libavformat`, `libavcodec`, `libavutil`, and
+  `libswresample`
+- ALSA development libraries
+
+```bash
+git clone https://github.com/segfaultcafe/Termify.git
+cd Termify
 make build
 make run
 ```
 
-During development, `yt-dlp` should be located in `./bin/.local/bin/yt-dlp`.  
-In release, it's expected at `/usr/local/share/termify/bin/yt-dlp`.
-
-
-## Installing 
-
-To install the latest version, run:
+`make build` compiles the Debug target and runs the tests. Other useful targets:
 
 ```bash
-git clone https://github.com/alexbsec/termify.git
-cd termify
-chmod +x ./scripts/release.sh
-make install
+make test       # rebuild and run the test suite
+make package    # create the tested Linux release archive and checksum
+make install    # build, test, and install to /usr/local/bin
 ```
 
-Now `termify` should be available as a global command, as long as `/usr/local/bin` is in your environment variables. To make sure, run
+`make package` downloads the pinned official standalone yt-dlp release, checks
+its SHA-256 digest, and includes it in the archive. This packaging step requires
+network access; ordinary source builds do not.
 
-```bash
-export PATH="/usr/local/bin:$PATH"
-```
+## Platform status
 
----
+Termify currently supports Linux. Windows support is planned around a
+cross-platform audio backend and platform-specific terminal and process
+adapters; the decoder, queue, metadata, progress, and playback state are
+already portable.
 
 ## License
 
-MIT — feel free to use and modify.
-
----
-
-## Author
-
-Made with caffeine and bitshifting by [@alexbsec](https://github.com/alexbsec)
+[MIT](LICENSE)

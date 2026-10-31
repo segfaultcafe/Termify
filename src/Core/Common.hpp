@@ -2,6 +2,7 @@
 #define _TERMIFY_CORE_COMMON_HPP
 
 #include "Defines.hpp"
+#include "SongQueue.hpp"
 #include <queue>
 
 namespace termify::core {
@@ -19,10 +20,26 @@ struct AtomicContext {
   RingBufferContext *ringBufferCtx;
   VisualizationContext *visualizationCtx;
   MixerResponseContext *mResponseCtx;
+  SongQueue *trackQueue;
+};
+
+struct TrackMetadata {
+  string title;
+  string artist;
+  string album;
 };
 
 struct PlaybackContext {
-  atomic_bool isPlaying, shouldStop, gRunning, isPaused;
+  atomic_bool isPlaying{false};
+  atomic_bool shouldStop{false};
+  atomic_bool gRunning{false};
+  atomic_bool isPaused{false};
+  atomic_bool isLoading{false};
+  std::atomic<int> volumePercent{100};
+  std::atomic<uint64> positionFrames{0};
+  std::atomic<uint64> durationFrames{0};
+  std::mutex metadataMtx;
+  TrackMetadata metadata;
   std::mutex pauseMtx;
   condition_variable pauseCv;
   std::thread playThread;
@@ -32,27 +49,31 @@ struct RingBufferContext {
   const int BUFFER_FRAMES = 44100 * 5;
   const int CHANNELS = 1;
   vector<int16> ringBuffer;
-  atomic_uint32 writeIndex, readIndex;
+  atomic_uint32 writeIndex{0};
+  atomic_uint32 readIndex{0};
   std::mutex ringMtx;
   condition_variable ringCv;
-  atomic_bool decodeFinished;
+  atomic_bool decodeFinished{true};
 };
 
 struct VisualizationContext {
-  const int BAR_ROW = 2;
-  std::array<int16, BUFFER_SIZE> visBuffer{}; 
-  std::mutex visMtx, coutMtx;
+  static constexpr int PROMPT_ROW = 17;
+  std::array<int16, BUFFER_SIZE> visBuffer{};
+  std::mutex visMtx;
+  std::mutex coutMtx;
+  std::mutex inputMtx;
+  string inputLine;
+  std::size_t inputCursor{0};
+  std::atomic<int> uiLeftColumn{1};
+  std::atomic<int> uiTopRow{1};
 };
 
 struct MixerResponseContext {
-  atomic_uint32 resNotProcessedCount{0};
   std::queue<MixerResponse> responses;
   std::mutex resMtx;
-  condition_variable resCv;
 };
 
 struct MixerResponse {
-  int64 id;
   string message;
   bool isErr;
 };
