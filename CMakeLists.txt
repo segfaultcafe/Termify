@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(termify)
+project(termify VERSION 0.2.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
 
@@ -16,6 +18,8 @@ file(GLOB_RECURSE SOURCES src/*.cpp)
 
 # Define executable
 add_executable(termify ${SOURCES})
+target_compile_options(termify PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_definitions(termify PRIVATE TERMIFY_VERSION="${PROJECT_VERSION}")
 
 # Include dirs
 target_include_directories(termify PRIVATE
@@ -28,3 +32,17 @@ target_link_libraries(termify
   PkgConfig::FFMPEG
   ${ALSA_LIBRARIES}
 )
+
+include(GNUInstallDirs)
+install(TARGETS termify RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(song_queue_tests
+    tests/SongQueueTests.cpp
+    src/Core/SongQueue.cpp
+  )
+  target_include_directories(song_queue_tests PRIVATE src/Core)
+  target_compile_options(song_queue_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME song_queue COMMAND song_queue_tests)
+endif()

@@ -1,42 +1,48 @@
 #ifndef _TERMIFY_CORE_CLI_HPP
 #define _TERMIFY_CORE_CLI_HPP
 
-#include "Defines.hpp"
 #include "Mixer.hpp"
+#include <optional>
 
 namespace termify::core {
 
-enum class Command { EXIT, PLAY, STOP, REPEAT, PAUSE, RESUME, UNKNOWN };
-inline std::unordered_map<Command, uint32_t> cmdMap = {
-    {Command::EXIT, 0},
-    {Command::PLAY, 1},
-    {Command::STOP, 0},
-    {Command::REPEAT, 0},
-    {Command::PAUSE, 0},
-    {Command::RESUME, 0},
-    {Command::UNKNOWN, 0},
+enum class Command {
+  EXIT,
+  PLAY,
+  STOP,
+  REPEAT,
+  PAUSE,
+  RESUME,
+  NEXT,
+  QUEUE,
+  CLEAR,
+  VOLUME,
+  HELP,
+  UNKNOWN
 };
+
+Command StringToCommand(string command);
 
 class Cli {
 public:
   explicit Cli(std::unique_ptr<Mixer> &mixer);
-  ~Cli();
-
   void Run();
-  void WaveformLoop();
 
 private:
-  vector<string> parseArgs(const string &input);
-  void printLog(const string &msg);
-  
-  void awaitMixerResponse();
+  vector<string> parseArgs(const string &input) const;
+  static string joinQuery(const vector<string> &args);
+  std::optional<string> readLine();
+  void redrawInput(const string &line, std::size_t cursor) const;
+  static std::size_t previousCharacter(const string &line,
+                                       std::size_t cursor);
+  static std::size_t nextCharacter(const string &line, std::size_t cursor);
+  static std::size_t characterCount(const string &line,
+                                    std::size_t begin = 0);
 
-private:
   atomic_bool _repeatRequested{false};
   std::unique_ptr<Mixer> &_mixer;
-  std::thread _responseThread;
 };
 
-}
+} // namespace termify::core
 
 #endif // _TERMIFY_CORE_CLI_HPP

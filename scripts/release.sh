@@ -1,29 +1,17 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-BUILD_DIR="./bin/Release"
-FINAL_INSTALL_DIR="/usr/local/bin"
-FINAL_DEPENDENCY_DIR="/usr/local/share/termify/bin"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="$(sed -n 's/^project(termify VERSION \([^ ]*\).*/\1/p' \
+  "$PROJECT_DIR/CMakeLists.txt")"
+ARCH="$(uname -m)"
+PACKAGE_DIR="$PROJECT_DIR/dist/termify-v${VERSION}-linux-${ARCH}"
 
-echo "Cleaning previous build..."
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
+"$PROJECT_DIR/scripts/package-release.sh"
+sudo install -Dm755 "$PACKAGE_DIR/termify" /usr/local/bin/termify
+sudo install -Dm755 "$PACKAGE_DIR/yt-dlp" \
+  /usr/local/lib/termify/yt-dlp
 
-echo "Configuring CMake for Release..."
-cmake -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-      -S . -B "$BUILD_DIR"
-
-echo "Linking compile_commands.json..."
-ln -sf "$BUILD_DIR/compile_commands.json" compile_commands.json
-
-echo "Building project..."
-cmake --build "$BUILD_DIR" --config Release --target all
-
-echo "Copying to final system locations (sudo may be required)..."
-sudo install -Dm755 "$BUILD_DIR/termify" "$FINAL_INSTALL_DIR/termify"
-sudo install -Dm755 "./ext/yt-dlp" "$FINAL_DEPENDENCY_DIR/yt-dlp"
-
-echo "✅ Release installed to:"
-echo "  - Binary: $FINAL_INSTALL_DIR/termify"
-echo "  - yt-dlp: $FINAL_DEPENDENCY_DIR/yt-dlp"
+echo "Installed Termify to /usr/local/bin/termify"
+echo "Installed embedded yt-dlp to /usr/local/lib/termify/yt-dlp"
+echo "No Python or separate yt-dlp installation is required."

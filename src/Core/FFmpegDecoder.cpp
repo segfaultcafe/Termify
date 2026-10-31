@@ -1,5 +1,4 @@
 #include "FFmpegDecoder.hpp"
-#include "AudioDownloader.hpp"
 #include "RingBuffer.hpp"
 #include <libavcodec/avcodec.h>
 
@@ -7,67 +6,78 @@ namespace termify::core {
 
 FFmpegDecoder::FFmpegDecoder(AtomicContext &ctx) : _ctx(ctx) {}
 
-void FFmpegDecoder::Stream(const string &query) {
+void FFmpegDecoder::Stream(const string &source, const string &displayName) {
+  if (_ctx.playbackCtx->shouldStop.load())
+    return;
+
+  _fmtCtx = nullptr;
+  _swr = nullptr;
   _ctx.ringBufferCtx->decodeFinished.store(false);
   _ctx.ringBufferCtx->writeIndex.store(0);
   _ctx.ringBufferCtx->readIndex.store(0);
-  _ctx.playbackCtx->shouldStop.store(false);
-  _ctx.playbackCtx->isPlaying.store(true);
-  _ctx.playbackCtx->isPaused.store(false);
+  _ctx.playbackCtx->positionFrames.store(0);
 
-  // 1) Download if it's a search term
-  const string source = downloadAudio(query);
-
-  // 2) FFmpeg init
   AVCodecContext *codecCtx = nullptr;
-  int streamIndex = init(source, &codecCtx);
-
-  // 3) Resampler to S16 stereo 44100
-  resampleStereo(codecCtx);
-
-  // 4) ALSA open
   snd_pcm_t *pcm = nullptr;
-  openAlsa(&pcm);
+  AVPacket *packet = nullptr;
+  AVFrame *frame = nullptr;
+  uint8_t *outputBuffer = nullptr;
+  std::thread consumer;
 
-  // 5) Prepare packet/frame+buffer
-  AVPacket *pkt = av_packet_alloc();
-  AVFrame *frame = av_frame_alloc();
-  uint64 bufCapacity = 192000;
-  auto outBuf = new uint8_t[bufCapacity];
+  auto cleanup = [&] {
+    if (consumer.joinable()) {
+      consumer.join();
+    }
+    delete[] outputBuffer;
+    av_frame_free(&frame);
+    av_packet_free(&packet);
+    swr_free(&_swr);
+    avcodec_free_context(&codecCtx);
+    avformat_close_input(&_fmtCtx);
+    if (pcm) {
+      snd_pcm_drop(pcm);
+      snd_pcm_close(pcm);
+      pcm = nullptr;
+    }
+  };
 
-  // 6) Consumer thread → ALSA
-  std::thread consumer([&]() { worker(&pcm); });
+  try {
+    if (source.empty()) {
+      throw std::runtime_error("No playable source was produced");
+    }
 
-  // 7) Producer → decode+resample→ring
-  decodeResample(codecCtx, pkt, frame, streamIndex, bufCapacity, outBuf);
-  // wait on consumer
-  consumer.join();
+    const int streamIndex = init(source, &codecCtx);
+    publishStreamInfo(displayName, streamIndex);
+    _ctx.playbackCtx->isLoading.store(false);
+    resampleStereo(codecCtx);
+    openAlsa(&pcm);
 
-  // cleanup
-  delete[] outBuf;
-  av_frame_free(&frame);
-  av_packet_free(&pkt);
-  swr_free(&_swr);
-  avcodec_free_context(&codecCtx);
-  avformat_close_input(&_fmtCtx);
+    packet = av_packet_alloc();
+    frame = av_frame_alloc();
+    constexpr uint64 BUFFER_CAPACITY = 192000;
+    outputBuffer = new uint8_t[BUFFER_CAPACITY];
+    if (!packet || !frame) {
+      throw std::runtime_error("FFmpeg buffer allocation failed");
+    }
 
-  // delete temp file if we downloaded
-  if (_deleteAfter) {
-    std::filesystem::remove(source);
+    consumer = std::thread([&] { worker(&pcm); });
+    decodeResample(codecCtx, packet, frame, streamIndex, BUFFER_CAPACITY,
+                   outputBuffer);
+    cleanup();
+  } catch (...) {
+    _ctx.playbackCtx->isLoading.store(false);
+    const bool cancellationRequested =
+        _ctx.playbackCtx->shouldStop.load();
+    _ctx.playbackCtx->shouldStop.store(true);
+    _ctx.ringBufferCtx->decodeFinished.store(true);
+    _ctx.ringBufferCtx->ringCv.notify_all();
+    _ctx.playbackCtx->pauseCv.notify_all();
+    cleanup();
+    if (!cancellationRequested) {
+      _ctx.playbackCtx->shouldStop.store(false);
+    }
+    throw;
   }
-
-  _ctx.playbackCtx->shouldStop = false;
-  _ctx.playbackCtx->isPlaying = false;
-}
-
-string FFmpegDecoder::downloadAudio(const string &query) {
-  string source = query;
-  if (!std::filesystem::exists(source)) {
-    source = YtDlpManager::Self().DownloadAudioToFile(query);
-    _deleteAfter = true;
-  }
-
-  return source;
 }
 
 int FFmpegDecoder::init(const string &source, AVCodecContext **ppCodecCtx) {
@@ -86,16 +96,56 @@ int FFmpegDecoder::init(const string &source, AVCodecContext **ppCodecCtx) {
 
   AVCodecParameters *codecpar = _fmtCtx->streams[streamIndex]->codecpar;
   const AVCodec *codec = avcodec_find_decoder(codecpar->codec_id);
+  if (!codec)
+    throw std::runtime_error("No compatible audio decoder");
   *ppCodecCtx = avcodec_alloc_context3(codec);
-  avcodec_parameters_to_context(*ppCodecCtx, codecpar);
-  avcodec_open2(*ppCodecCtx, codec, nullptr);
+  if (!*ppCodecCtx ||
+      avcodec_parameters_to_context(*ppCodecCtx, codecpar) < 0 ||
+      avcodec_open2(*ppCodecCtx, codec, nullptr) < 0)
+    throw std::runtime_error("Failed to initialize the audio decoder");
   return streamIndex;
+}
 
-  return streamIndex;
+void FFmpegDecoder::publishStreamInfo(const string &displayName,
+                                      int streamIndex) {
+  uint64 durationFrames = 0;
+  if (_fmtCtx->duration != AV_NOPTS_VALUE && _fmtCtx->duration > 0) {
+    durationFrames = static_cast<uint64>(_fmtCtx->duration) * 44100 /
+                     static_cast<uint64>(AV_TIME_BASE);
+  } else {
+    const AVStream *stream = _fmtCtx->streams[streamIndex];
+    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0) {
+      const double seconds = stream->duration * av_q2d(stream->time_base);
+      durationFrames = static_cast<uint64>(std::max(0.0, seconds) * 44100.0);
+    }
+  }
+  _ctx.playbackCtx->durationFrames.store(durationFrames);
+
+  auto metadataValue = [this, streamIndex](const char *key) -> string {
+    AVDictionaryEntry *entry =
+        av_dict_get(_fmtCtx->metadata, key, nullptr, AV_DICT_IGNORE_SUFFIX);
+    if (!entry) {
+      entry = av_dict_get(_fmtCtx->streams[streamIndex]->metadata, key, nullptr,
+                          AV_DICT_IGNORE_SUFFIX);
+    }
+    return entry && entry->value ? entry->value : "";
+  };
+
+  TrackMetadata metadata;
+  metadata.title = metadataValue("title");
+  metadata.artist = metadataValue("artist");
+  metadata.album = metadataValue("album");
+  if (metadata.title.empty()) {
+    metadata.title = displayName;
+  }
+  std::lock_guard lock(_ctx.playbackCtx->metadataMtx);
+  _ctx.playbackCtx->metadata = std::move(metadata);
 }
 
 void FFmpegDecoder::resampleStereo(AVCodecContext *codecCtx) {
   _swr = swr_alloc();
+  if (!_swr)
+    throw std::runtime_error("Failed to allocate the audio resampler");
   AVChannelLayout stereo;
   av_channel_layout_default(&stereo, _ctx.ringBufferCtx->CHANNELS);
   av_opt_set_chlayout(_swr, "in_chlayout", &codecCtx->ch_layout, 0);
@@ -104,14 +154,20 @@ void FFmpegDecoder::resampleStereo(AVCodecContext *codecCtx) {
   av_opt_set_chlayout(_swr, "out_chlayout", &stereo, 0);
   av_opt_set_sample_fmt(_swr, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0);
   av_opt_set_int(_swr, "out_sample_rate", 44100, 0);
-  swr_init(_swr);
+  if (swr_init(_swr) < 0)
+    throw std::runtime_error("Failed to initialize the audio resampler");
 }
 
 void FFmpegDecoder::openAlsa(snd_pcm_t **ppPcm) {
-  if (snd_pcm_open(ppPcm, "pipewire", SND_PCM_STREAM_PLAYBACK, 0) < 0)
-    throw std::runtime_error("ALSA open failed");
-  snd_pcm_set_params(*ppPcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
-                     _ctx.ringBufferCtx->CHANNELS, 44100, 1, 500000);
+  int result = snd_pcm_open(ppPcm, "pipewire", SND_PCM_STREAM_PLAYBACK, 0);
+  if (result < 0)
+    result = snd_pcm_open(ppPcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
+  if (result < 0)
+    throw std::runtime_error("No ALSA playback device is available");
+  if (snd_pcm_set_params(*ppPcm, SND_PCM_FORMAT_S16_LE,
+                         SND_PCM_ACCESS_RW_INTERLEAVED,
+                         _ctx.ringBufferCtx->CHANNELS, 44100, 1, 500000) < 0)
+    throw std::runtime_error("ALSA device configuration failed");
 }
 
 void FFmpegDecoder::decodeResample(AVCodecContext *codecCtx, AVPacket *pkt,
