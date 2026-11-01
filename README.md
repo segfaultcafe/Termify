@@ -19,6 +19,8 @@
 - Responsive, centered terminal interface with a live waveform
 - Title, artist, album, elapsed time, duration, and playback progress
 - Bounded 20-track queue with one-at-a-time background prefetching
+- Selectable upcoming tracks with play-now, remove, reorder, and safe clear
+  controls
 - Player, History, Playlists, and YouTube Search tabs with keyboard and mouse
   controls
 - Clickable playback controls, a track-repeat toggle, and a mouse-wheel
@@ -38,9 +40,13 @@ cached results and playlist actions, and symmetric Play Now and Play Next
 controls in History. Mouse-driven playback remains fully compatible with the
 command prompt.
 
-The **v0.5.0** release candidate adds progress-bar and CLI seeking, remembers
+**v0.5.0** adds progress-bar and CLI seeking, remembers
 volume between sessions, shows resolved song titles in **UP NEXT**, and keeps a
 looping playlist's queue visibly continuous between cycles.
+
+The in-development **v0.6.0** makes **UP NEXT** directly manageable with
+mouse/keyboard actions and equivalent `queue` commands. Queue edits affect
+only the current playback session; saved playlist order remains unchanged.
 
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
@@ -157,6 +163,10 @@ Then enter commands at the `termify ›` prompt:
 | `volume 60` | Set volume from 0 to 100 percent |
 | `volume +10` / `volume -10` | Adjust volume relative to its current level |
 | `queue` | Show the number of queued tracks |
+| `queue play N` | Play queued position N now |
+| `queue remove N` | Remove queued position N from this session |
+| `queue move N up` / `queue move N down` | Reorder a track within its priority tier |
+| `queue clear` | Clear upcoming tracks (CLI form) |
 | `history` / `player` | Switch to the History or Player tab |
 | `playlists` | Open the playlist manager |
 | `search` | Open the YouTube Search tab |
@@ -199,7 +209,7 @@ next
   pending work, and closes Termify through the same clean shutdown path as the
   `quit` command.
 - The frame title shows the build version, for example
-  `TERMIFY - terminal audio player - v0.5.0`.
+  `TERMIFY - terminal audio player - v0.6.0`.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
 - **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
   bar is focused; **Esc** returns to the command prompt.
@@ -231,6 +241,12 @@ next
 - The Player's **ADD TO PLAYLIST** button opens the same picker for the current
   track, including the inline **NEW PLAYLIST** flow. Cached/history eligibility
   is still enforced before the current track can be saved.
+- **UP NEXT** is a selectable three-row list. Select a queued track to expose
+  **PLAY NOW**, **REMOVE**, **MOVE UP**, **MOVE DOWN**, and **CLEAR** in the
+  Player's action row; double-clicking or pressing Enter also plays the
+  selected track now. **CLEAR** requires a second confirmation click. Moving
+  tracks preserves manual Play Next priority over playlist tracks, and edits
+  never rewrite the saved playlist.
 - The Playlists tab has separate playlist and track lists. Click a row or use
   the arrow keys. **PLAYLIST COMMANDS** groups **NEW**, **RENAME**, and
   **DELETE** with **PLAY SELECTED**, **SHUFFLE**, and **LOOP**; **TRACK

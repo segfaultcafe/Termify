@@ -73,6 +73,16 @@ Loop-generated entries carry a distinct queue origin, allowing the live LOOP
 toggle to remove future-cycle entries without touching the current cycle or
 manual requests.
 
+The three visible **UP NEXT** rows are one `ListView` keyed by stable queue
+IDs. Selecting a row exposes Play Now, Remove, Move Up, Move Down, and Clear
+buttons in the Player action row; double-click and Enter take the same Play Now
+path. Clear changes to a Confirm button before mutating the queue. Reordering
+is allowed within the manual or playlist tier but cannot move a playlist track
+ahead of a manual request. Removing or moving playlist-origin entries changes
+only the live session and never writes to `LocalStore`. The equivalent CLI
+forms use the visible one-based positions: `queue play N`, `queue remove N`,
+`queue move N up|down`, and `queue clear`.
+
 The Search view owns a second `TextInput` dedicated to YouTube queries; the
 shared command prompt remains visible and continues to accept fine-grained
 commands. Results are canonical provider records, not user-entered metadata.

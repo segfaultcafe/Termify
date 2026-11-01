@@ -131,7 +131,13 @@ private:
   tui::Button *_playerRepeat{nullptr};
   tui::Knob *_playerVolume{nullptr};
   tui::Rule *_queueRule{nullptr};
-  std::array<tui::Label *, 3> _queueItems{};
+  tui::ListView *_queueList{nullptr};
+  tui::Button *_queuePlayNow{nullptr};
+  tui::Button *_queueRemove{nullptr};
+  tui::Button *_queueUp{nullptr};
+  tui::Button *_queueDown{nullptr};
+  tui::Button *_queueClear{nullptr};
+  bool _queueClearArmed{false};
   tui::Rule *_waveformRule{nullptr};
   tui::Label *_waveform{nullptr};
   tui::Rule *_separator{nullptr};
