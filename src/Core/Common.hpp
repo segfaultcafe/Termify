@@ -11,7 +11,6 @@ namespace termify::core {
 struct PlaybackContext;
 struct RingBufferContext;
 struct VisualizationContext;
-struct MixerResponse;
 struct MixerResponseContext;
 
 const int BUFFER_SIZE = 2048;
@@ -70,14 +69,14 @@ struct VisualizationContext {
   std::atomic<int> uiTopRow{1};
 };
 
-struct MixerResponseContext {
-  std::queue<MixerResponse> responses;
-  std::mutex resMtx;
-};
-
 struct MixerResponse {
   string message;
   bool isErr;
+};
+
+struct MixerResponseContext {
+  std::queue<MixerResponse> responses;
+  std::mutex resMtx;
 };
 
 } // namespace termify::core
