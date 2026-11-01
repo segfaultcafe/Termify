@@ -65,6 +65,12 @@ The `master` branch is protected and does not accept direct pushes.
 4. Run `make test` before pushing.
 5. Push the branch to your fork and open a pull request against `master`.
 
+GitHub Actions builds each pull request with GCC and Clang, runs the unit tests
+under AddressSanitizer and UndefinedBehaviorSanitizer, checks shell syntax and
+whitespace, and smoke-tests the release package. Test-result XML files are
+retained as workflow artifacts for 14 days. All required checks must pass
+before a pull request can be merged.
+
 Maintainers may open pull requests from branches in the main repository.
 Contributors without repository write access should always work from a fork.
 

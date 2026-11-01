@@ -5,6 +5,10 @@
 <h1 align="center">Termify</h1>
 
 <p align="center">
+  <a href="https://github.com/segfaultcafe/Termify/actions/workflows/ci.yml"><img src="https://github.com/segfaultcafe/Termify/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+</p>
+
+<p align="center">
   A focused terminal audio player for Linux, built with modern C++, FFmpeg,
   ALSA, and an included standalone yt-dlp.
 </p>
