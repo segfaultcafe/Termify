@@ -11,6 +11,7 @@ namespace termify::core {
 struct PreparedAudio {
   string path;
   string source;
+  string title;
   bool temporary{false};
   std::shared_ptr<CacheLease> cacheLease;
 };
@@ -45,6 +46,7 @@ private:
   struct DownloadedAudio {
     string path;
     string source;
+    string title;
   };
   DownloadedAudio download(const string &query,
                            const atomic_bool *cancel = nullptr);

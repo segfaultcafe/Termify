@@ -38,9 +38,12 @@ struct PlaybackContext {
   atomic_bool gRunning{false};
   atomic_bool isPaused{false};
   atomic_bool isLoading{false};
+  atomic_bool historyRecorded{false};
   std::atomic<int> volumePercent{100};
   std::atomic<uint64> positionFrames{0};
   std::atomic<uint64> durationFrames{0};
+  std::atomic<std::int64_t> seekTargetFrames{-1};
+  std::atomic<uint64> seekGeneration{0};
   std::mutex metadataMtx;
   TrackMetadata metadata;
   std::mutex pauseMtx;

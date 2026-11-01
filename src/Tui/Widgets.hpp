@@ -55,12 +55,22 @@ public:
 
   void SetProgress(double progress);
   void SetLabels(std::string leading, std::string trailing);
+  void SetPointer(std::optional<Point> point) override;
+  bool Handle(const Event &event) override;
   void Render(Canvas &canvas) const override;
+  std::optional<double> TakeSeekFraction();
+  int TakeSeekAdjustment();
 
 private:
+  double fractionAt(int column) const;
   double _progress{0.0};
+  double _dragProgress{0.0};
   std::string _leading;
   std::string _trailing;
+  std::optional<double> _seekFraction;
+  int _seekAdjustment{0};
+  bool _dragging{false};
+  bool _hovered{false};
 };
 
 class TextInput : public Widget {

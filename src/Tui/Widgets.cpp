@@ -90,27 +90,91 @@ void ProgressBar::SetLabels(std::string leading, std::string trailing) {
   _trailing = std::move(trailing);
 }
 
+void ProgressBar::SetPointer(std::optional<Point> point) {
+  _hovered = point.has_value();
+  if (!point && _dragging) {
+    _seekFraction = _dragProgress;
+    _dragging = false;
+  }
+}
+
+bool ProgressBar::Handle(const Event &event) {
+  const auto *mouse = std::get_if<MouseEvent>(&event);
+  if (!mouse)
+    return false;
+  if (mouse->action == MouseAction::Scroll) {
+    if (mouse->button == MouseButton::WheelUp) {
+      _seekAdjustment += 5;
+      return true;
+    }
+    if (mouse->button == MouseButton::WheelDown) {
+      _seekAdjustment -= 5;
+      return true;
+    }
+    return false;
+  }
+  if (mouse->button != MouseButton::Left)
+    return false;
+  if (mouse->action == MouseAction::Press) {
+    _dragging = true;
+  } else if (mouse->action == MouseAction::Release) {
+    if (!_dragging)
+      return false;
+    _dragging = false;
+  } else if (mouse->action != MouseAction::Move || !_dragging) {
+    return false;
+  }
+  _dragProgress = fractionAt(mouse->column);
+  _seekFraction = _dragProgress;
+  return true;
+}
+
+double ProgressBar::fractionAt(int column) const {
+  const auto &bounds = Bounds();
+  const int fixed = static_cast<int>(Canvas::TextWidth(_leading) +
+                                     Canvas::TextWidth(_trailing)) +
+                    4;
+  const int barWidth = std::max(1, bounds.width - fixed);
+  const int barColumn = bounds.column +
+                        static_cast<int>(Canvas::TextWidth(_leading)) + 2;
+  if (barWidth == 1)
+    return column <= barColumn ? 0.0 : 1.0;
+  return std::clamp(static_cast<double>(column - barColumn) /
+                        static_cast<double>(barWidth - 1),
+                    0.0, 1.0);
+}
+
 void ProgressBar::Render(Canvas &canvas) const {
   const auto &bounds = Bounds();
   const int fixed = static_cast<int>(Canvas::TextWidth(_leading) +
                                      Canvas::TextWidth(_trailing)) +
                     4;
   const int barWidth = std::max(1, bounds.width - fixed);
-  const int filled = static_cast<int>(_progress * barWidth);
+  const double visibleProgress = _dragging ? _dragProgress : _progress;
+  const int filled = static_cast<int>(visibleProgress * barWidth);
+  const Color activeColor = _hovered ? Color::Yellow : Color::Cyan;
   int column = bounds.column;
   column += canvas.Text({column, bounds.row}, _leading + " [", {Color::Muted},
                         bounds.width);
   column += canvas.Text({column, bounds.row}, std::string(filled, ' '),
-                        {Color::Cyan}, barWidth);
+                        {activeColor}, barWidth);
   for (int index = 0; index < barWidth; ++index) {
     canvas.Put({column - filled + index, bounds.row},
                index < filled ? "━" : "─",
-               {index < filled ? Color::Cyan : Color::Muted});
+               {index < filled ? activeColor : Color::Muted});
   }
   column = bounds.column + static_cast<int>(Canvas::TextWidth(_leading)) + 2 +
            barWidth;
   canvas.Text({column, bounds.row}, "] " + _trailing, {Color::Muted},
               bounds.column + bounds.width - column);
+}
+
+std::optional<double> ProgressBar::TakeSeekFraction() {
+  return std::exchange(_seekFraction, std::nullopt);
+}
+
+int ProgressBar::TakeSeekAdjustment() {
+  return std::exchange(_seekAdjustment, 0);
 }
 
 TextInput::TextInput(std::string id) : Widget(std::move(id)) {}

@@ -16,6 +16,7 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
   _ctx.ringBufferCtx->writeIndex.store(0);
   _ctx.ringBufferCtx->readIndex.store(0);
   _ctx.playbackCtx->positionFrames.store(0);
+  _ctx.playbackCtx->historyRecorded.store(false);
 
   AVCodecContext *codecCtx = nullptr;
   snd_pcm_t *pcm = nullptr;
@@ -23,6 +24,7 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
   AVFrame *frame = nullptr;
   uint8_t *outputBuffer = nullptr;
   std::thread consumer;
+  std::atomic_bool outputFinished{false};
 
   auto cleanup = [&] {
     if (consumer.joinable()) {
@@ -60,9 +62,13 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
       throw std::runtime_error("FFmpeg buffer allocation failed");
     }
 
-    consumer = std::thread([&] { worker(&pcm); });
+    consumer = std::thread([&] {
+      worker(&pcm);
+      outputFinished.store(true);
+      _ctx.ringBufferCtx->ringCv.notify_all();
+    });
     decodeResample(codecCtx, packet, frame, streamIndex, BUFFER_CAPACITY,
-                   outputBuffer);
+                   outputBuffer, &outputFinished);
     cleanup();
   } catch (...) {
     _ctx.playbackCtx->isLoading.store(false);
@@ -172,13 +178,34 @@ void FFmpegDecoder::openAlsa(snd_pcm_t **ppPcm) {
 
 void FFmpegDecoder::decodeResample(AVCodecContext *codecCtx, AVPacket *pkt,
                                    AVFrame *frame, int streamIndex,
-                                   uint64 bufCapacity, uint8_t *outBuf) {
-  while (av_read_frame(_fmtCtx, pkt) >= 0 &&
-         !_ctx.playbackCtx->shouldStop.load()) {
+                                   uint64 bufCapacity, uint8_t *outBuf,
+                                   const std::atomic_bool *outputFinished) {
+  while (!_ctx.playbackCtx->shouldStop.load()) {
+    if (applyPendingSeek(codecCtx, streamIndex, pkt, frame))
+      continue;
+    if (av_read_frame(_fmtCtx, pkt) < 0) {
+      _ctx.ringBufferCtx->decodeFinished.store(true);
+      _ctx.ringBufferCtx->ringCv.notify_all();
+      std::unique_lock lock(_ctx.ringBufferCtx->ringMtx);
+      _ctx.ringBufferCtx->ringCv.wait(lock, [&] {
+        return _ctx.playbackCtx->shouldStop.load() ||
+               _ctx.playbackCtx->seekTargetFrames.load() >= 0 ||
+               outputFinished->load();
+      });
+      if (outputFinished->load() || _ctx.playbackCtx->shouldStop.load())
+        break;
+      _ctx.ringBufferCtx->decodeFinished.store(false);
+      continue;
+    }
+    bool seekPending = false;
     if (pkt->stream_index == streamIndex) {
       avcodec_send_packet(codecCtx, pkt);
       while (avcodec_receive_frame(codecCtx, frame) == 0 &&
              !_ctx.playbackCtx->shouldStop.load()) {
+        if (_ctx.playbackCtx->seekTargetFrames.load() >= 0) {
+          seekPending = true;
+          break;
+        }
         int outSamples = swr_convert(
             _swr, &outBuf,
             bufCapacity / sizeof(int16_t) / _ctx.ringBufferCtx->CHANNELS,
@@ -194,8 +221,14 @@ void FFmpegDecoder::decodeResample(AVCodecContext *codecCtx, AVPacket *pkt,
             size_t ri2 = _ctx.ringBufferCtx->readIndex,
                    wi2 = _ctx.ringBufferCtx->writeIndex;
             return _ctx.playbackCtx->shouldStop.load() ||
+                   _ctx.playbackCtx->seekTargetFrames.load() >= 0 ||
                    ((ri2 + rb - wi2 - 1) % rb) > 0;
           });
+
+          if (_ctx.playbackCtx->seekTargetFrames.load() >= 0) {
+            seekPending = true;
+            break;
+          }
 
           ri = _ctx.ringBufferCtx->readIndex;
           wi = _ctx.ringBufferCtx->writeIndex;
@@ -208,14 +241,52 @@ void FFmpegDecoder::decodeResample(AVCodecContext *codecCtx, AVPacket *pkt,
           lk.unlock();
           _ctx.ringBufferCtx->ringCv.notify_all();
         }
+        if (seekPending)
+          break;
       }
     }
     av_packet_unref(pkt);
+    if (seekPending)
+      continue;
   }
 
   // signal end
   _ctx.ringBufferCtx->decodeFinished.store(true);
   _ctx.ringBufferCtx->ringCv.notify_all();
+}
+
+bool FFmpegDecoder::applyPendingSeek(AVCodecContext *codecCtx, int streamIndex,
+                                     AVPacket *packet, AVFrame *frame) {
+  const auto target = _ctx.playbackCtx->seekTargetFrames.exchange(-1);
+  if (target < 0)
+    return false;
+  _ctx.ringBufferCtx->decodeFinished.store(false);
+  const AVRational frames{1, 44100};
+  const auto timestamp = av_rescale_q(target, frames,
+                                      _fmtCtx->streams[streamIndex]->time_base);
+  if (av_seek_frame(_fmtCtx, streamIndex, timestamp, AVSEEK_FLAG_BACKWARD) <
+      0) {
+    _ctx.ringBufferCtx->decodeFinished.store(true);
+    _ctx.ringBufferCtx->ringCv.notify_all();
+    return false;
+  }
+
+  avcodec_flush_buffers(codecCtx);
+  swr_close(_swr);
+  if (swr_init(_swr) < 0)
+    throw std::runtime_error("Failed to reset audio after seeking");
+  av_packet_unref(packet);
+  av_frame_unref(frame);
+  {
+    std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+    _ctx.ringBufferCtx->readIndex.store(0);
+    _ctx.ringBufferCtx->writeIndex.store(0);
+  }
+  _ctx.playbackCtx->positionFrames.store(static_cast<uint64>(target));
+  _ctx.playbackCtx->seekGeneration.fetch_add(1);
+  _ctx.ringBufferCtx->ringCv.notify_all();
+  _ctx.playbackCtx->pauseCv.notify_all();
+  return true;
 }
 
 void FFmpegDecoder::worker(snd_pcm_t **ppPcm) { RingBuffer::Update(_ctx, ppPcm); }

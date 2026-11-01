@@ -1,6 +1,8 @@
 #include "Cli.hpp"
 
+#include <charconv>
 #include <cctype>
+#include <limits>
 
 namespace termify::core {
 
@@ -20,6 +22,9 @@ std::optional<string> commandHelp(const string &topic) {
     return "repeat — toggle repeating the current track";
   case Command::VOLUME:
     return "volume <0-100> to set volume; volume <+N|-N> to adjust it";
+  case Command::SEEK:
+    return "seek <seconds|M:SS|H:MM:SS> — jump to a position; prefix with + "
+           "or - to move relative to the current position";
   case Command::HISTORY:
     return "history — open play history; arrows select, Enter queues a track";
   case Command::PLAYER:
@@ -69,6 +74,8 @@ Command StringToCommand(string command) {
     return Command::CLEAR;
   if (command == "volume" || command == "vol" || command == ".v")
     return Command::VOLUME;
+  if (command == "seek")
+    return Command::SEEK;
   if (command == "history")
     return Command::HISTORY;
   if (command == "player")
@@ -80,6 +87,51 @@ Command StringToCommand(string command) {
   if (command == "help" || command == ".h" || command == "?")
     return Command::HELP;
   return Command::UNKNOWN;
+}
+
+std::optional<SeekArgument> ParseSeekArgument(const string &value) {
+  if (value.empty())
+    return std::nullopt;
+  std::size_t start = 0;
+  int sign = 1;
+  bool relative = false;
+  if (value.front() == '+' || value.front() == '-') {
+    relative = true;
+    sign = value.front() == '-' ? -1 : 1;
+    start = 1;
+  }
+  if (start == value.size())
+    return std::nullopt;
+
+  vector<std::int64_t> parts;
+  while (start <= value.size()) {
+    const auto separator = value.find(':', start);
+    const auto end = separator == string::npos ? value.size() : separator;
+    if (end == start || parts.size() == 3)
+      return std::nullopt;
+    std::int64_t part = 0;
+    const auto [parsed, error] =
+        std::from_chars(value.data() + start, value.data() + end, part);
+    if (error != std::errc{} || parsed != value.data() + end || part < 0)
+      return std::nullopt;
+    parts.push_back(part);
+    if (separator == string::npos)
+      break;
+    start = separator + 1;
+  }
+  if (parts.size() > 1) {
+    for (std::size_t index = 1; index < parts.size(); ++index) {
+      if (parts[index] >= 60)
+        return std::nullopt;
+    }
+  }
+  std::int64_t seconds = 0;
+  for (const auto part : parts) {
+    if (seconds > (std::numeric_limits<std::int64_t>::max() - part) / 60)
+      return std::nullopt;
+    seconds = seconds * 60 + part;
+  }
+  return SeekArgument{seconds * sign, relative};
 }
 
 Cli::Cli(std::unique_ptr<Mixer> &mixer,
@@ -124,9 +176,14 @@ void Cli::Execute(const string &line) {
     break;
   case Command::QUEUE: {
     const auto count = ctx->trackQueue->Size();
-    _mixer->PublishMessage(count == 1
-                               ? "1 track is queued."
-                               : std::to_string(count) + " tracks are queued.");
+    if (_mixer->IsPlaylistLooping()) {
+      _mixer->PublishMessage("The playlist queue loops indefinitely (" +
+                             std::to_string(count) + " tracks buffered).");
+    } else {
+      _mixer->PublishMessage(
+          count == 1 ? "1 track is queued."
+                     : std::to_string(count) + " tracks are queued.");
+    }
     break;
   }
   case Command::CLEAR:
@@ -157,9 +214,25 @@ void Cli::Execute(const string &line) {
     }
     break;
   }
+  case Command::SEEK: {
+    if (args.size() != 2) {
+      _mixer->PublishMessage("Usage: seek <seconds | M:SS | H:MM:SS>", true);
+      break;
+    }
+    const auto seek = ParseSeekArgument(args[1]);
+    if (!seek) {
+      _mixer->PublishMessage("Usage: seek <seconds | M:SS | H:MM:SS>", true);
+      break;
+    }
+    if (seek->relative)
+      _mixer->SeekRelativeSeconds(seek->seconds);
+    else
+      _mixer->SeekToSeconds(seek->seconds);
+    break;
+  }
   case Command::HELP:
     if (args.size() == 1) {
-      _mixer->PublishMessage("play  pause  resume  next  repeat  volume  "
+      _mixer->PublishMessage("play  pause  resume  next  repeat  volume  seek  "
                              "history  playlists  search  player  stop  queue  "
                              "clear  exit — use help <command>");
       break;

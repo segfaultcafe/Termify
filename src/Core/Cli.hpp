@@ -17,6 +17,7 @@ enum class Command {
   QUEUE,
   CLEAR,
   VOLUME,
+  SEEK,
   HISTORY,
   PLAYER,
   PLAYLISTS,
@@ -25,7 +26,15 @@ enum class Command {
   UNKNOWN
 };
 
+struct SeekArgument {
+  std::int64_t seconds{0};
+  bool relative{false};
+
+  bool operator==(const SeekArgument &) const = default;
+};
+
 Command StringToCommand(string command);
+std::optional<SeekArgument> ParseSeekArgument(const string &value);
 
 class Cli {
 public:

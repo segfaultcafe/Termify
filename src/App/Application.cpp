@@ -237,9 +237,9 @@ void Application::runInteractiveInput() {
 
     std::optional<string> submission;
     std::optional<string> searchSubmission;
-    std::optional<string> historyPlayNext;
-    std::optional<string> historyPlayNow;
-    std::optional<string> playlistReplay;
+    std::optional<core::TrackRequest> historyPlayNext;
+    std::optional<core::TrackRequest> historyPlayNow;
+    std::optional<core::TrackRequest> playlistReplay;
     bool cancelPrompt = false;
     bool createPlaylist = false, renamePlaylist = false;
     bool deletePlaylist = false, addHistory = false, addCurrent = false;
@@ -249,6 +249,8 @@ void Application::runInteractiveInput() {
     bool toggleRepeatTrack = false;
     bool quitApplication = false;
     int volumeAdjustment = 0;
+    int seekAdjustment = 0;
+    std::optional<double> seekFraction;
     bool searchPlayNow = false, searchPlayNext = false;
     bool openSearchPicker = false, openPlayerPicker = false;
     bool addPickerTrack = false, createPickerPlaylist = false;
@@ -283,7 +285,7 @@ void Application::runInteractiveInput() {
       if (const auto id = _historyList->TakeActivation()) {
         for (const auto &entry : _historyEntries) {
           if (std::to_string(entry.id) == *id) {
-            historyPlayNext = entry.source;
+            historyPlayNext = core::TrackRequest(entry.source, entry.title);
             break;
           }
         }
@@ -291,7 +293,7 @@ void Application::runInteractiveInput() {
       if (const auto id = _historyList->TakeDoubleClickActivation()) {
         for (const auto &entry : _historyEntries) {
           if (std::to_string(entry.id) == *id) {
-            historyPlayNow = entry.source;
+            historyPlayNow = core::TrackRequest(entry.source, entry.title);
             break;
           }
         }
@@ -299,7 +301,7 @@ void Application::runInteractiveInput() {
       if (const auto id = _playlistTrackList->TakeActivation()) {
         for (const auto &track : _playlistTracks) {
           if (std::to_string(track.id) == *id) {
-            playlistReplay = track.source;
+            playlistReplay = core::TrackRequest(track.source, track.title);
             break;
           }
         }
@@ -324,7 +326,8 @@ void Application::runInteractiveInput() {
       createPlaylist = _playlistNew->TakeActivation();
       renamePlaylist = _playlistRename->TakeActivation();
       deletePlaylist = _playlistDelete->TakeActivation();
-      const auto selectedHistorySource = [this]() -> std::optional<string> {
+      const auto selectedHistorySource =
+          [this]() -> std::optional<core::TrackRequest> {
         const auto selected = _historyList->SelectedId();
         if (!selected)
           return std::nullopt;
@@ -335,7 +338,8 @@ void Application::runInteractiveInput() {
             });
         return entry == _historyEntries.end()
                    ? std::nullopt
-                   : std::optional<string>(entry->source);
+                   : std::optional<core::TrackRequest>(
+                         core::TrackRequest(entry->source, entry->title));
       };
       if (_historyPlayNow->TakeActivation())
         historyPlayNow = selectedHistorySource();
@@ -355,6 +359,8 @@ void Application::runInteractiveInput() {
       openPlayerPicker = _playerAddPlaylist->TakeActivation();
       toggleRepeatTrack = _playerRepeat->TakeActivation();
       volumeAdjustment = _playerVolume->TakeAdjustment();
+      seekAdjustment = _progress->TakeSeekAdjustment();
+      seekFraction = _progress->TakeSeekFraction();
       quitApplication = _quit->TakeActivation();
       searchPlayNow = _searchPlayNow->TakeActivation() || searchPlayNow;
       searchPlayNext = _searchPlayNext->TakeActivation();
@@ -377,11 +383,11 @@ void Application::runInteractiveInput() {
     if (cancelPrompt)
       cancelPlaylistPrompt();
     if (historyPlayNext)
-      _mixer->AddToQueue(*historyPlayNext);
+      _mixer->AddToQueue(historyPlayNext->source, historyPlayNext->title);
     if (historyPlayNow)
-      _mixer->PlayNow(*historyPlayNow);
+      _mixer->PlayNow(historyPlayNow->source, historyPlayNow->title);
     if (playlistReplay)
-      _mixer->AddToQueue(*playlistReplay);
+      _mixer->AddToQueue(playlistReplay->source, playlistReplay->title);
     if (createPlaylist)
       beginPlaylistPrompt(false);
     if (renamePlaylist)
@@ -421,15 +427,19 @@ void Application::runInteractiveInput() {
       _mixer->ToggleRepeat(!_mixer->IsRepeatOn());
     if (volumeAdjustment)
       _mixer->SetVolume(_mixer->Volume() + volumeAdjustment);
+    if (seekFraction)
+      _mixer->SeekToFraction(*seekFraction, false);
+    if (seekAdjustment)
+      _mixer->SeekRelativeSeconds(seekAdjustment);
     if (searchPlayNow) {
       if (const auto result = selectedSearchResult())
-        _mixer->PlayNow(result->source);
+        _mixer->PlayNow(result->source, result->title);
       else
         _mixer->PublishMessage("Select a search result first.", true);
     }
     if (searchPlayNext) {
       if (const auto result = selectedSearchResult())
-        _mixer->AddToQueue(result->source);
+        _mixer->AddToQueue(result->source, result->title);
       else
         _mixer->PublishMessage("Select a search result first.", true);
     }
@@ -1194,19 +1204,19 @@ void Application::movePlaylistTrack(int direction) {
 
 void Application::playSelectedPlaylist() {
   const auto playlist = selectedPlaylist();
-  vector<string> sources;
+  vector<core::TrackRequest> tracks;
   {
     std::lock_guard lock(_widgetMtx);
     for (const auto &track : _playlistTracks)
-      sources.push_back(track.source);
+      tracks.emplace_back(track.source, track.title);
   }
   if (!playlist) {
     _statusMessage = "Select a playlist first.";
     _statusIsError = true;
     return;
   }
-  _mixer->StartPlaylist(std::move(sources), playlist->name, playlist->shuffle,
-                        playlist->loop);
+  _mixer->StartPlaylist(std::move(tracks), playlist->name, playlist->shuffle,
+                        playlist->loop, playlist->id);
 }
 
 void Application::togglePlaylistShuffle() {
@@ -1230,7 +1240,9 @@ void Application::togglePlaylistLoop() {
   if (!playlist)
     return;
   try {
-    _store->SetPlaylistLoop(playlist->id, !playlist->loop);
+    const bool enabled = !playlist->loop;
+    _store->SetPlaylistLoop(playlist->id, enabled);
+    _mixer->SetPlaylistLoop(playlist->id, enabled);
     _statusMessage =
         playlist->loop ? "Playlist loop disabled." : "Playlist loop enabled.";
     _statusIsError = false;
@@ -1297,8 +1309,9 @@ void Application::renderUi() {
   _visualizationCtx.uiTopRow.store(top);
   const int contentWidth = width - 6;
   const string track = _mixer->TrackName();
-  const auto queue = _trackQueue.Snapshot(3);
+  const auto queue = _mixer->UpcomingTracks(3);
   const auto queueSize = _trackQueue.Size();
+  const bool playlistLooping = _mixer->IsPlaylistLooping();
   const bool paused = _playbackCtx.isPaused.load();
   const bool playing = _playbackCtx.isPlaying.load();
   const bool loading = _playbackCtx.isLoading.load();
@@ -1338,7 +1351,9 @@ void Application::renderUi() {
 
   std::lock_guard widgetLock(_widgetMtx);
   configureWidgets(width);
-  string summaryDetails = "    QUEUE " + std::to_string(queueSize);
+  string summaryDetails =
+      "    QUEUE " +
+      (playlistLooping ? string("∞") : std::to_string(queueSize));
   if (_tabs->Selected() != 0)
     summaryDetails += "    REPEAT " + repeat + "    VOL " +
                       std::to_string(_mixer->Volume()) + "%";
@@ -1384,9 +1399,17 @@ void Application::renderUi() {
         marker = "! ";
         markerStyle = RED;
       }
+      string queueLabel = !queued.title.empty()
+                              ? queued.title
+                              : (!queued.source.empty() ? queued.source
+                                                        : queued.query);
+      queueLabel.erase(
+          std::remove_if(queueLabel.begin(), queueLabel.end(),
+                         [](unsigned char ch) { return ch < 32 || ch == 127; }),
+          queueLabel.end());
       _queueItems[index]->SetSpans(
           {{marker, markerStyle},
-           {tui::Canvas::Clip(queued.query, contentWidth - 2), {}}});
+           {tui::Canvas::Clip(queueLabel, contentWidth - 2), {}}});
     } else if (index == 0) {
       _queueItems[index]->SetText("Queue is empty", MUTED);
     } else {
@@ -1414,7 +1437,8 @@ void Application::renderUi() {
                        "action")
               : (_playerPickerOpen
                      ? "✓ membership · Add/New playlist · Esc cancels"
-                     : "Wheel: volume · Repeat toggle · Tab focus · Esc: CLI"),
+                     : "Progress: click/drag/wheel seek · Volume wheel · Esc: "
+                       "CLI"),
           contentWidth),
       MUTED);
 

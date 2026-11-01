@@ -19,7 +19,7 @@ int main() {
   CHECK(!queue.Push(""));
 
   const auto firstId = queue.Push("first");
-  const auto secondId = queue.Push("second");
+  const auto secondId = queue.Push("second", "Second title");
   CHECK(firstId);
   CHECK(secondId);
   CHECK(queue.Size() == 2);
@@ -28,17 +28,19 @@ int main() {
   CHECK(snapshot.size() == 2);
   CHECK(snapshot[0].query == "first");
   CHECK(snapshot[1].query == "second");
+  CHECK(snapshot[1].title == "Second title");
   CHECK(snapshot[0].state == termify::core::QueueState::Pending);
 
   const auto claimed = queue.ClaimForPrefetch();
   CHECK(claimed && claimed->id == *firstId);
   CHECK(!queue.ReadyForPlayback());
   CHECK(queue.MarkReady(*firstId, "/tmp/first.opus", "https://example/first",
-                        true));
+                        "Resolved first", true));
   CHECK(queue.ReadyForPlayback());
   const auto first = queue.PopForPlayback();
   CHECK(first && first->query == "first" &&
         first->source == "https://example/first" && first->temporary);
+  CHECK(first->title == "Resolved first");
   const auto second = queue.PopForPlayback();
   CHECK(second && second->query == "second");
   CHECK(queue.Empty());
@@ -62,8 +64,9 @@ int main() {
   CHECK(cleared.size() == SongQueue::MAX_SONGS);
   CHECK(queue.Empty());
 
-  CHECK(queue.PushPlaylistCycle({"playlist-a", "playlist-b"}));
-  CHECK(!queue.PushPlaylistCycle({"duplicate-cycle"}));
+  CHECK(queue.PushPlaylistCycle(
+      {{"playlist-a", "Playlist A"}, {"playlist-b", "Playlist B"}}));
+  CHECK(!queue.PushPlaylistCycle({{"duplicate-cycle"}}));
   CHECK(queue.PushNext("manual-one"));
   CHECK(queue.PushNext("manual-two"));
   const auto prioritized = queue.Snapshot(4);
@@ -71,6 +74,7 @@ int main() {
   CHECK(prioritized[0].query == "manual-two");
   CHECK(prioritized[1].query == "manual-one");
   CHECK(prioritized[2].query == "playlist-a");
+  CHECK(prioritized[2].title == "Playlist A");
   CHECK(prioritized[3].query == "playlist-b");
   CHECK(prioritized[0].origin == termify::core::QueueOrigin::Manual);
   CHECK(prioritized[2].origin == termify::core::QueueOrigin::Playlist);
@@ -78,6 +82,9 @@ int main() {
   const auto sameNext = queue.PrioritizeNext("manual-two");
   CHECK(sameNext.result == termify::core::QueueNextResult::AlreadyNext);
   CHECK(queue.Size() == 4);
+  CHECK(queue.PrioritizeNext("manual-two", "Manual two title").result ==
+        termify::core::QueueNextResult::AlreadyNext);
+  CHECK(queue.Snapshot()[0].title == "Manual two title");
   const auto movedNext = queue.PrioritizeNext("playlist-b");
   CHECK(movedNext.result == termify::core::QueueNextResult::Moved);
   const auto deduplicated = queue.Snapshot(5);
@@ -96,7 +103,7 @@ int main() {
   CHECK(queue.ClaimForPrefetch());
   const auto claimedPrepared = queue.ClaimForPrefetch();
   CHECK(claimedPrepared && claimedPrepared->id == *preparedId);
-  CHECK(queue.MarkReady(*preparedId, "/tmp/prepared", "https://prepared",
+  CHECK(queue.MarkReady(*preparedId, "/tmp/prepared", "https://prepared", {},
                         false));
   CHECK(queue.PrioritizeNext("prepared").result ==
         termify::core::QueueNextResult::Moved);
@@ -106,7 +113,21 @@ int main() {
   CHECK(preserved[0].preparedPath == "/tmp/prepared");
 
   queue.Clear();
-  CHECK(!queue.PushPlaylistCycle({"valid", ""}));
+  CHECK(!queue.PushPlaylistCycle({{"valid"}, {""}}));
   CHECK(queue.Empty());
+
+  CHECK(queue.AppendPlaylist({"loop-a", "Loop A"}));
+  CHECK(queue.AppendPlaylist({"loop-b", "Loop B"}, true));
+  CHECK(queue.Snapshot(2)[1].origin ==
+        termify::core::QueueOrigin::PlaylistLoop);
+  const auto continuations = queue.RemoveLoopContinuations();
+  CHECK(continuations.size() == 1 && continuations[0].query == "loop-b");
+  CHECK(queue.Size() == 1);
+  CHECK(queue.AppendPlaylist({"loop-b", "Loop B"}));
+  const auto dropped = queue.DropLastPlaylist();
+  CHECK(dropped && dropped->query == "loop-b" && dropped->title == "Loop B");
+  CHECK(queue.Size() == 1);
+  queue.Clear();
+  CHECK(!queue.DropLastPlaylist());
   return 0;
 }

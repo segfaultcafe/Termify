@@ -10,19 +10,35 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
   auto &ringBufferCtx = ctx.ringBufferCtx;
   auto &playbackCtx = ctx.playbackCtx;
   auto &visualCtx = ctx.visualizationCtx;
+  uint64 observedSeek = playbackCtx->seekGeneration.load();
+  const auto resetDevice = [&] {
+    snd_pcm_drop(*ppPcm);
+    snd_pcm_prepare(*ppPcm);
+  };
   while (!ringBufferCtx->decodeFinished.load() ||
          ringBufferCtx->readIndex.load() != ringBufferCtx->writeIndex.load()) {
     if (playbackCtx->shouldStop.load())
       break;
+    if (playbackCtx->seekGeneration.load() != observedSeek) {
+      observedSeek = playbackCtx->seekGeneration.load();
+      resetDevice();
+    }
     std::unique_lock lk(ringBufferCtx->ringMtx);
     ringBufferCtx->ringCv.wait(lk, [&]() {
       return playbackCtx->shouldStop.load() ||
+             playbackCtx->seekGeneration.load() != observedSeek ||
              ringBufferCtx->decodeFinished.load() ||
              ringBufferCtx->writeIndex.load() !=
                  ringBufferCtx->readIndex.load();
     });
     if (playbackCtx->shouldStop.load())
       break;
+    if (playbackCtx->seekGeneration.load() != observedSeek) {
+      observedSeek = playbackCtx->seekGeneration.load();
+      lk.unlock();
+      resetDevice();
+      continue;
+    }
     uint64 rb = ctx.ringBufferCtx->ringBuffer.size();
     uint64 wi = ctx.ringBufferCtx->writeIndex.load(),
            ri = ctx.ringBufferCtx->readIndex.load();
@@ -44,6 +60,11 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
 
     if (playbackCtx->shouldStop.load())
       break;
+    if (playbackCtx->seekGeneration.load() != observedSeek) {
+      observedSeek = playbackCtx->seekGeneration.load();
+      resetDevice();
+      continue;
+    }
 
     const int volume = playbackCtx->volumePercent.load();
     if (volume != 100) {
@@ -60,22 +81,38 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
       memcpy(visualCtx->visBuffer.data(), chunk.data(), c * sizeof(int16_t));
     }
 
+    bool discardChunk = false;
     while (playbackCtx->isPaused.load()) {
       std::unique_lock plk(playbackCtx->pauseMtx);
       playbackCtx->pauseCv.wait(plk, [&]() {
-        return !playbackCtx->isPaused.load() || playbackCtx->shouldStop.load();
+        return !playbackCtx->isPaused.load() ||
+               playbackCtx->shouldStop.load() ||
+               playbackCtx->seekGeneration.load() != observedSeek;
       });
 
       if (playbackCtx->shouldStop.load()) {
         return;
       }
+      if (playbackCtx->seekGeneration.load() != observedSeek) {
+        discardChunk = true;
+        break;
+      }
+    }
+    if (discardChunk) {
+      observedSeek = playbackCtx->seekGeneration.load();
+      resetDevice();
+      continue;
     }
 
     // write to ALSA (retry on XRUN)
     int frames = toRead / ringBufferCtx->CHANNELS, off = 0;
     while (frames > 0) {
-      int w = snd_pcm_writei(*ppPcm, chunk.data() + off * ringBufferCtx->CHANNELS,
-                             frames);
+      if (playbackCtx->seekGeneration.load() != observedSeek) {
+        discardChunk = true;
+        break;
+      }
+      int w = snd_pcm_writei(
+          *ppPcm, chunk.data() + off * ringBufferCtx->CHANNELS, frames);
       if (w == -EPIPE) {
         snd_pcm_prepare(*ppPcm);
         continue;
@@ -84,13 +121,19 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
         snd_pcm_prepare(*ppPcm);
         break;
       }
+      if (playbackCtx->seekGeneration.load() != observedSeek) {
+        discardChunk = true;
+        break;
+      }
       frames -= w;
       off += w;
-      const auto previous = playbackCtx->positionFrames.fetch_add(static_cast<uint64>(w));
-      if (w > 0 && previous == 0 && ctx.store) {
+      playbackCtx->positionFrames.fetch_add(static_cast<uint64>(w));
+      if (w > 0 && ctx.store &&
+          !playbackCtx->historyRecorded.exchange(true)) {
         HistoryEntry entry;
         entry.source = ctx.source;
-        entry.durationSeconds = static_cast<std::int64_t>(playbackCtx->durationFrames.load() / 44100);
+        entry.durationSeconds = static_cast<std::int64_t>(
+            playbackCtx->durationFrames.load() / 44100);
         entry.playedAt = std::time(nullptr);
         {
           std::lock_guard metadataLock(playbackCtx->metadataMtx);
@@ -100,6 +143,10 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
         }
         ctx.store->QueueRecord(std::move(entry));
       }
+    }
+    if (discardChunk) {
+      observedSeek = playbackCtx->seekGeneration.load();
+      resetDevice();
     }
   }
 }

@@ -1,9 +1,20 @@
 #include "Mixer.hpp"
 #include "AudioDownloader.hpp"
 
+#include <iomanip>
 #include <random>
 
 namespace termify::core {
+
+namespace {
+string formatSeekPosition(uint64 frames) {
+  const uint64 seconds = frames / 44100;
+  std::ostringstream output;
+  output << seconds / 60 << ':' << std::setw(2) << std::setfill('0')
+         << seconds % 60;
+  return output.str();
+}
+} // namespace
 
 Mixer::Mixer(PlaybackContext *playback, RingBufferContext *ringBuffer,
              VisualizationContext *visualization,
@@ -15,29 +26,47 @@ Mixer::Mixer(PlaybackContext *playback, RingBufferContext *ringBuffer,
   _ctx.mResponseCtx = responses;
   _ctx.trackQueue = queue;
   _ctx.store = store;
+  if (store) {
+    try {
+      if (const auto saved = store->SavedVolume())
+        _ctx.playbackCtx->volumePercent.store(*saved);
+    } catch (const std::exception &) {
+      // Playback remains available when a setting cannot be read.
+    }
+  }
   _schedulerThread = std::thread([this] { schedulerLoop(); });
   _prefetchThread = std::thread([this] { prefetchLoop(); });
 }
 
 Mixer::~Mixer() { Shutdown(); }
 
-bool Mixer::AddToQueue(string song) {
+bool Mixer::AddToQueue(string song, string title) {
   std::error_code pathError;
   if (std::filesystem::is_regular_file(song, pathError))
     song = std::filesystem::absolute(song).lexically_normal().string();
-  return prioritizeNext(std::move(song), false);
+  return prioritizeNext(std::move(song), std::move(title), false);
 }
 
-bool Mixer::PlayNow(string song) {
+bool Mixer::PlayNow(string song, string title) {
   std::error_code pathError;
   if (std::filesystem::is_regular_file(song, pathError))
     song = std::filesystem::absolute(song).lexically_normal().string();
-  return prioritizeNext(std::move(song), true);
+  return prioritizeNext(std::move(song), std::move(title), true);
 }
 
-bool Mixer::prioritizeNext(string song, bool playNow) {
-  const string displayName = song;
-  const auto outcome = _ctx.trackQueue->PrioritizeNext(std::move(song));
+bool Mixer::prioritizeNext(string song, string title, bool playNow) {
+  const string displayName = title.empty() ? song : title;
+  auto outcome = _ctx.trackQueue->PrioritizeNext(song, title);
+  if (outcome.result == QueueNextResult::Full) {
+    if (auto displaced = _ctx.trackQueue->DropLastPlaylist()) {
+      deferPlaylistTrack(
+          {displaced->query, displaced->title},
+          displaced->origin == QueueOrigin::PlaylistLoop);
+      cleanupPrepared(*displaced);
+      outcome =
+          _ctx.trackQueue->PrioritizeNext(std::move(song), std::move(title));
+    }
+  }
   if (outcome.result == QueueNextResult::Invalid) {
     dispatchResponse("Choose a valid track first.", true);
     return false;
@@ -63,8 +92,8 @@ bool Mixer::prioritizeNext(string song, bool playNow) {
   return true;
 }
 
-bool Mixer::StartPlaylist(vector<string> songs, string name, bool shuffle,
-                          bool loop) {
+bool Mixer::StartPlaylist(vector<TrackRequest> songs, string name, bool shuffle,
+                          bool loop, std::int64_t playlistId) {
   if (songs.empty()) {
     dispatchResponse("This playlist has no tracks.", true);
     return false;
@@ -79,12 +108,25 @@ bool Mixer::StartPlaylist(vector<string> songs, string name, bool shuffle,
     std::lock_guard playlistLock(_playlistMtx);
     _playlistSongs = std::move(songs);
     _playlistName = std::move(name);
+    _playlistId = playlistId;
     _playlistShuffle = shuffle;
     _playlistLoop = loop;
     _playlistActive = true;
+    _playlistStarting = true;
+    _playlistAppendOrder.clear();
+    _playlistAppendIndex = 0;
+    _playlistDeferred.clear();
   }
-  if (!queuePlaylistCycle())
+  if (!queuePlaylistCycle()) {
+    std::lock_guard playlistLock(_playlistMtx);
+    _playlistStarting = false;
+    _playlistActive = false;
     return false;
+  }
+  {
+    std::lock_guard playlistLock(_playlistMtx);
+    _playlistStarting = false;
+  }
   dispatchResponse("Playing playlist: " + _playlistName +
                    (shuffle ? " · shuffle" : "") + (loop ? " · loop" : ""));
   return true;
@@ -98,6 +140,41 @@ string Mixer::TrackName() const {
 string Mixer::CurrentSource() const {
   std::lock_guard lock(_trackMtx);
   return _trackSource;
+}
+
+vector<QueuedSong> Mixer::UpcomingTracks(std::size_t limit) {
+  replenishPlaylistQueue(limit);
+  return _ctx.trackQueue->Snapshot(limit);
+}
+
+bool Mixer::IsPlaylistLooping() const {
+  std::lock_guard playlistLock(_playlistMtx);
+  return _playlistActive && _playlistLoop;
+}
+
+bool Mixer::SetPlaylistLoop(std::int64_t playlistId, bool enabled) {
+  {
+    std::lock_guard playlistLock(_playlistMtx);
+    if (!_playlistActive || _playlistId != playlistId)
+      return false;
+    _playlistLoop = enabled;
+    if (!enabled) {
+      _playlistAppendOrder.clear();
+      _playlistAppendIndex = 0;
+      std::erase_if(_playlistDeferred, [](const auto &track) {
+        return track.loopContinuation;
+      });
+    }
+  }
+  if (!enabled) {
+    for (const auto &song : _ctx.trackQueue->RemoveLoopContinuations())
+      cleanupPrepared(song);
+  } else {
+    replenishPlaylistQueue();
+  }
+  _schedulerCv.notify_one();
+  _prefetchCv.notify_one();
+  return true;
 }
 
 void Mixer::Pause() {
@@ -126,13 +203,7 @@ void Mixer::Resume() {
 
 void Mixer::NextSong() {
   if (_ctx.trackQueue->Empty()) {
-    bool loopPlaylist = false;
-    {
-      std::lock_guard playlistLock(_playlistMtx);
-      loopPlaylist = _playlistActive && _playlistLoop;
-    }
-    if (loopPlaylist)
-      queuePlaylistCycle();
+    replenishPlaylistQueue(1);
   }
   if (_ctx.trackQueue->Empty()) {
     dispatchResponse("There is no next track in the queue.", true);
@@ -181,6 +252,7 @@ void Mixer::Stop(bool force, bool clearQueue) {
   _ctx.playbackCtx->shouldStop.store(false);
   _ctx.playbackCtx->positionFrames.store(0);
   _ctx.playbackCtx->durationFrames.store(0);
+  _ctx.playbackCtx->seekTargetFrames.store(-1);
   {
     std::lock_guard trackLock(_trackMtx);
     _trackName.clear();
@@ -205,7 +277,12 @@ void Mixer::clearQueue(bool cancelPlaylist) {
   if (cancelPlaylist) {
     std::lock_guard playlistLock(_playlistMtx);
     _playlistActive = false;
+    _playlistStarting = false;
+    _playlistId = 0;
     _playlistSongs.clear();
+    _playlistAppendOrder.clear();
+    _playlistAppendIndex = 0;
+    _playlistDeferred.clear();
   }
   for (const auto &song : _ctx.trackQueue->Clear()) {
     cleanupPrepared(song);
@@ -215,7 +292,7 @@ void Mixer::clearQueue(bool cancelPlaylist) {
 }
 
 bool Mixer::queuePlaylistCycle() {
-  vector<string> songs;
+  vector<TrackRequest> songs;
   bool shuffle = false;
   {
     std::lock_guard playlistLock(_playlistMtx);
@@ -232,15 +309,138 @@ bool Mixer::queuePlaylistCycle() {
   if (!_ctx.trackQueue->PushPlaylistCycle(std::move(songs))) {
     return false;
   }
+  {
+    std::lock_guard playlistLock(_playlistMtx);
+    _playlistAppendOrder.clear();
+    _playlistAppendIndex = 0;
+  }
   _schedulerCv.notify_one();
   _prefetchCv.notify_one();
   return true;
 }
 
+void Mixer::deferPlaylistTrack(TrackRequest track, bool loopContinuation) {
+  std::lock_guard playlistLock(_playlistMtx);
+  if (_playlistActive)
+    _playlistDeferred.push_front(
+        {std::move(track), loopContinuation});
+}
+
+void Mixer::replenishPlaylistQueue(std::size_t minimum) {
+  minimum = std::min(minimum, SongQueue::MAX_SONGS);
+  bool added = false;
+  while (_ctx.trackQueue->Size() < minimum) {
+    std::lock_guard playlistLock(_playlistMtx);
+    if (!_playlistActive || _playlistStarting)
+      break;
+    std::optional<TrackRequest> next;
+    bool loopContinuation = false;
+    if (!_playlistDeferred.empty()) {
+      next = std::move(_playlistDeferred.front().track);
+      loopContinuation = _playlistDeferred.front().loopContinuation;
+      _playlistDeferred.pop_front();
+    } else {
+      if (!_playlistLoop || _playlistSongs.empty())
+        break;
+      if (_playlistAppendIndex >= _playlistAppendOrder.size()) {
+        _playlistAppendOrder = _playlistSongs;
+        _playlistAppendIndex = 0;
+        if (_playlistShuffle) {
+          std::random_device device;
+          std::mt19937 generator(device());
+          std::shuffle(_playlistAppendOrder.begin(),
+                       _playlistAppendOrder.end(), generator);
+        }
+      }
+      next = _playlistAppendOrder[_playlistAppendIndex++];
+      loopContinuation = true;
+    }
+    if (!_ctx.trackQueue->AppendPlaylist(*next, loopContinuation)) {
+      _playlistDeferred.push_front(
+          {std::move(*next), loopContinuation});
+      break;
+    }
+    added = true;
+  }
+  if (added) {
+    _schedulerCv.notify_one();
+    _prefetchCv.notify_one();
+  }
+}
+
 void Mixer::SetVolume(int percent) {
   const int clamped = std::clamp(percent, 0, 100);
   _ctx.playbackCtx->volumePercent.store(clamped);
+  if (_ctx.store) {
+    try {
+      _ctx.store->SaveVolume(clamped);
+    } catch (const std::exception &error) {
+      dispatchResponse(
+          "Volume changed for this session but could not be saved: " +
+              string(error.what()),
+          true);
+      return;
+    }
+  }
   dispatchResponse("Volume set to " + std::to_string(clamped) + "%.");
+}
+
+bool Mixer::SeekToSeconds(std::int64_t seconds, bool announce) {
+  const uint64 duration = _ctx.playbackCtx->durationFrames.load();
+  if (!_ctx.playbackCtx->isPlaying.load() || duration == 0) {
+    if (announce)
+      dispatchResponse("Nothing seekable is currently playing.", true);
+    return false;
+  }
+  const auto maximum = static_cast<std::int64_t>(duration / 44100);
+  const auto clamped = std::clamp<std::int64_t>(seconds, 0, maximum);
+  return requestSeek(
+      std::min<uint64>(static_cast<uint64>(clamped) * 44100, duration),
+      announce);
+}
+
+bool Mixer::SeekRelativeSeconds(std::int64_t seconds, bool announce) {
+  const uint64 duration = _ctx.playbackCtx->durationFrames.load();
+  if (!_ctx.playbackCtx->isPlaying.load() || duration == 0) {
+    if (announce)
+      dispatchResponse("Nothing seekable is currently playing.", true);
+    return false;
+  }
+  const auto pending = _ctx.playbackCtx->seekTargetFrames.load();
+  const uint64 currentFrames = pending >= 0
+                                   ? static_cast<uint64>(pending)
+                                   : _ctx.playbackCtx->positionFrames.load();
+  const long double current =
+      static_cast<long double>(currentFrames) / 44100.0L;
+  const long double maximum = static_cast<long double>(duration / 44100);
+  const auto target = static_cast<uint64>(std::clamp(
+      current + static_cast<long double>(seconds), 0.0L, maximum));
+  return requestSeek(std::min<uint64>(target * 44100, duration), announce);
+}
+
+bool Mixer::SeekToFraction(double fraction, bool announce) {
+  const uint64 duration = _ctx.playbackCtx->durationFrames.load();
+  if (!_ctx.playbackCtx->isPlaying.load() || duration == 0) {
+    if (announce)
+      dispatchResponse("Nothing seekable is currently playing.", true);
+    return false;
+  }
+  const auto target = static_cast<uint64>(
+      std::clamp(fraction, 0.0, 1.0) * static_cast<double>(duration));
+  return requestSeek(std::min(target, duration), announce);
+}
+
+bool Mixer::requestSeek(uint64 targetFrames, bool announce) {
+  const uint64 duration = _ctx.playbackCtx->durationFrames.load();
+  targetFrames = std::min(targetFrames, duration);
+  _ctx.ringBufferCtx->decodeFinished.store(false);
+  _ctx.playbackCtx->seekTargetFrames.store(
+      static_cast<std::int64_t>(targetFrames));
+  _ctx.ringBufferCtx->ringCv.notify_all();
+  _ctx.playbackCtx->pauseCv.notify_all();
+  if (announce)
+    dispatchResponse("Seeking to " + formatSeekPosition(targetFrames) + ".");
+  return true;
 }
 
 void Mixer::ToggleRepeat(bool enabled) {
@@ -314,7 +514,7 @@ void Mixer::prefetchLoop() {
       auto prepared = YtDlpManager::Self().PrepareAudio(
           song->query, &_prefetchCancel, _ctx.store);
       if (!_ctx.trackQueue->MarkReady(song->id, prepared.path, prepared.source,
-                                      prepared.temporary,
+                                      prepared.title, prepared.temporary,
                                       prepared.cacheLease) &&
           prepared.temporary) {
         std::error_code error;
@@ -341,6 +541,7 @@ void Mixer::startNext() {
   if (!next) {
     return;
   }
+  replenishPlaylistQueue();
 
   if (next->state == QueueState::Failed) {
     dispatchResponse("Could not prepare " + next->query + ": " + next->error,
@@ -354,15 +555,16 @@ void Mixer::startNext() {
   }
 
   const QueuedSong song = std::move(*next);
+  const string displayName = song.title.empty() ? song.query : song.title;
   _ctx.source = song.query;
   {
     std::lock_guard trackLock(_trackMtx);
-    _trackName = song.query;
+    _trackName = displayName;
     _trackSource = song.source.empty() ? song.query : song.source;
   }
   {
     std::lock_guard metadataLock(_ctx.playbackCtx->metadataMtx);
-    _ctx.playbackCtx->metadata = {song.query, {}, {}};
+    _ctx.playbackCtx->metadata = {displayName, {}, {}};
   }
 
   _ctx.playbackCtx->shouldStop.store(false);
@@ -371,7 +573,8 @@ void Mixer::startNext() {
   _ctx.playbackCtx->isPlaying.store(true);
   _ctx.playbackCtx->positionFrames.store(0);
   _ctx.playbackCtx->durationFrames.store(0);
-  dispatchResponse("Now playing: " + song.query);
+  _ctx.playbackCtx->seekTargetFrames.store(-1);
+  dispatchResponse("Now playing: " + displayName);
   _prefetchCv.notify_one();
 
   _ctx.playbackCtx->playThread = std::thread([this, song] {
@@ -383,6 +586,8 @@ void Mixer::startNext() {
             preparedSong.query, &_ctx.playbackCtx->shouldStop, _ctx.store);
         preparedSong.preparedPath = std::move(prepared.path);
         preparedSong.source = std::move(prepared.source);
+        if (preparedSong.title.empty())
+          preparedSong.title = std::move(prepared.title);
         preparedSong.temporary = prepared.temporary;
         preparedSong.cacheLease = std::move(prepared.cacheLease);
       }
@@ -390,11 +595,16 @@ void Mixer::startNext() {
         std::lock_guard trackLock(_trackMtx);
         _trackSource = preparedSong.source.empty() ? preparedSong.query
                                                    : preparedSong.source;
+        if (!preparedSong.title.empty())
+          _trackName = preparedSong.title;
         _ctx.source = _trackSource;
       }
       do {
         FFmpegDecoder decoder(_ctx);
-        decoder.Stream(preparedSong.preparedPath, preparedSong.query);
+        const string decoderName = preparedSong.title.empty()
+                                       ? preparedSong.query
+                                       : preparedSong.title;
+        decoder.Stream(preparedSong.preparedPath, decoderName);
       } while (_repeatSong.load() && !_ctx.playbackCtx->shouldStop.load());
     } catch (const std::exception &error) {
       failed = !_ctx.playbackCtx->shouldStop.load();
@@ -418,22 +628,21 @@ void Mixer::startNext() {
     _ctx.playbackCtx->isPlaying.store(false);
     _ctx.playbackCtx->positionFrames.store(0);
     _ctx.playbackCtx->durationFrames.store(0);
+    _ctx.playbackCtx->seekTargetFrames.store(-1);
     _ctx.ringBufferCtx->ringCv.notify_all();
     _schedulerCv.notify_one();
 
+    if (!failed && !_ctx.playbackCtx->shouldStop.load()) {
+      replenishPlaylistQueue();
+    }
     if (!failed && !_ctx.playbackCtx->shouldStop.load() &&
         _ctx.trackQueue->Empty()) {
-      bool loop = false;
       {
         std::lock_guard playlistLock(_playlistMtx);
-        loop = _playlistActive && _playlistLoop;
-        if (_playlistActive && !loop)
+        if (_playlistActive)
           _playlistActive = false;
       }
-      if (loop && queuePlaylistCycle())
-        dispatchResponse("Looping playlist: " + _playlistName);
-      else
-        dispatchResponse("Queue finished.");
+      dispatchResponse("Queue finished.");
     }
   });
 }

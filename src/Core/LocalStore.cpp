@@ -155,7 +155,7 @@ LocalStore::LocalStore(std::filesystem::path dataDirectory,
       version.Next();
       schemaVersion = version.Number(0);
     }
-    if (schemaVersion > 2)
+    if (schemaVersion > 3)
       throw std::runtime_error(
           "Local library was created by a newer Termify version");
     execute(_db, "PRAGMA journal_mode=WAL");
@@ -170,13 +170,18 @@ LocalStore::LocalStore(std::filesystem::path dataDirectory,
               "duration INTEGER NOT NULL, played_at INTEGER NOT NULL);"
               "CREATE TABLE IF NOT EXISTS audio_cache (source TEXT PRIMARY KEY,"
               "filename TEXT UNIQUE NOT NULL, bytes INTEGER NOT NULL, touched "
-              "INTEGER NOT NULL, canonical_source TEXT NOT NULL DEFAULT '');");
+              "INTEGER NOT NULL, canonical_source TEXT NOT NULL DEFAULT '',"
+              "title TEXT NOT NULL DEFAULT '');");
       if (schemaVersion == 1) {
         execute(_db,
                 "ALTER TABLE audio_cache ADD COLUMN canonical_source TEXT NOT "
                 "NULL DEFAULT '';"
                 "UPDATE audio_cache SET canonical_source=source WHERE "
                 "canonical_source='';");
+      }
+      if (schemaVersion == 1 || schemaVersion == 2) {
+        execute(_db, "ALTER TABLE audio_cache ADD COLUMN title TEXT NOT NULL "
+                     "DEFAULT '';");
       }
       execute(
           _db,
@@ -196,7 +201,9 @@ LocalStore::LocalStore(std::filesystem::path dataDirectory,
           "REFERENCES library_tracks(source_hash), position INTEGER NOT "
           "NULL, UNIQUE(playlist_id,source_hash),"
           "UNIQUE(playlist_id,position));"
-          "PRAGMA user_version=2;");
+          "CREATE TABLE IF NOT EXISTS settings ("
+          "key TEXT PRIMARY KEY,value INTEGER NOT NULL);"
+          "PRAGMA user_version=3;");
       migration.Commit();
     }
     Transaction transaction(_db);
@@ -311,6 +318,62 @@ std::vector<HistoryEntry> LocalStore::History() {
   return entries;
 }
 
+std::optional<std::string>
+LocalStore::TrackTitle(const std::string &source) {
+  std::lock_guard lock(_mutex);
+  Statement cache(
+      _db, "SELECT title FROM audio_cache WHERE source=? OR canonical_source=? "
+           "ORDER BY source=? DESC LIMIT 1");
+  cache.Text(1, source);
+  cache.Text(2, source);
+  cache.Text(3, source);
+  if (cache.Next()) {
+    auto title = cache.Text(0);
+    if (!title.empty() && title != source)
+      return title;
+  }
+  Statement history(
+      _db,
+      "SELECT h.title FROM history h WHERE h.source=? OR h.source=(SELECT "
+      "canonical_source FROM audio_cache WHERE source=? OR canonical_source=? "
+      "ORDER BY source=? DESC LIMIT 1) ORDER BY h.id DESC LIMIT 1");
+  history.Text(1, source);
+  history.Text(2, source);
+  history.Text(3, source);
+  history.Text(4, source);
+  if (history.Next()) {
+    auto title = history.Text(0);
+    if (!title.empty() && title != source)
+      return title;
+  }
+  Statement library(_db,
+                    "SELECT title FROM library_tracks WHERE source=? LIMIT 1");
+  library.Text(1, source);
+  if (library.Next()) {
+    auto title = library.Text(0);
+    if (!title.empty() && title != source)
+      return title;
+  }
+  return std::nullopt;
+}
+
+std::optional<int> LocalStore::SavedVolume() {
+  std::lock_guard lock(_mutex);
+  Statement query(_db, "SELECT value FROM settings WHERE key='volume'");
+  if (!query.Next())
+    return std::nullopt;
+  return std::clamp(static_cast<int>(query.Number(0)), 0, 100);
+}
+
+void LocalStore::SaveVolume(int volume) {
+  std::lock_guard lock(_mutex);
+  Statement save(
+      _db, "INSERT INTO settings(key,value) VALUES('volume',?) ON CONFLICT(key) "
+           "DO UPDATE SET value=excluded.value");
+  save.Number(1, std::clamp(volume, 0, 100));
+  save.Next();
+}
+
 std::filesystem::path LocalStore::cachePath(const std::string &filename) const {
   if (!filename.starts_with("audio-") ||
       std::filesystem::path(filename).filename() != filename)
@@ -319,11 +382,12 @@ std::filesystem::path LocalStore::cachePath(const std::string &filename) const {
 }
 
 std::optional<CachedAudio> LocalStore::findAudio(const std::string &source) {
-  std::string filename, canonicalSource;
+  std::string filename, canonicalSource, title;
   std::int64_t expectedSize = 0;
   {
     Statement query(_db,
-                    "SELECT filename,bytes,canonical_source FROM audio_cache "
+                    "SELECT filename,bytes,canonical_source,title FROM "
+                    "audio_cache "
                     "WHERE source=? OR canonical_source=? ORDER BY source=? "
                     "DESC LIMIT 1");
     query.Text(1, source);
@@ -334,6 +398,7 @@ std::optional<CachedAudio> LocalStore::findAudio(const std::string &source) {
     filename = query.Text(0);
     expectedSize = query.Number(1);
     canonicalSource = query.Text(2);
+    title = query.Text(3);
   }
   const auto path = cachePath(filename);
   auto lease = path.empty() ? nullptr : lockFile(path, LOCK_SH);
@@ -351,6 +416,7 @@ std::optional<CachedAudio> LocalStore::findAudio(const std::string &source) {
   touch.Next();
   return CachedAudio{path.string(),
                      canonicalSource.empty() ? source : canonicalSource,
+                     std::move(title),
                      std::move(lease)};
 }
 
@@ -727,10 +793,21 @@ bool LocalStore::trimCache(std::uint64_t target) {
 std::optional<CachedAudio>
 LocalStore::StoreAudio(const std::string &source,
                        const std::filesystem::path &file,
-                       const std::string &canonicalSource) {
+                       const std::string &canonicalSource,
+                       const std::string &title) {
   std::lock_guard lock(_mutex);
   Transaction transaction(_db);
   if (auto existing = findAudio(source)) {
+    if (existing->title.empty() && !title.empty()) {
+      Statement update(
+          _db, "UPDATE audio_cache SET title=? WHERE source=? OR "
+               "canonical_source=?");
+      update.Text(1, title);
+      update.Text(2, source);
+      update.Text(3, source);
+      update.Next();
+      existing->title = title;
+    }
     transaction.Commit();
     return existing;
   }
@@ -781,17 +858,19 @@ LocalStore::StoreAudio(const std::string &source,
     Statement insert(
         _db,
         "INSERT OR REPLACE INTO audio_cache(source,filename,bytes,touched,"
-        "canonical_source) VALUES(?,?,?,(SELECT COALESCE(MAX(touched),0)+1 "
-        "FROM audio_cache),?)");
+        "canonical_source,title) VALUES(?,?,?,(SELECT "
+        "COALESCE(MAX(touched),0)+1 FROM audio_cache),?,?)");
     insert.Text(1, source);
     insert.Text(2, std::filesystem::path(pattern).filename().string());
     insert.Number(3, static_cast<std::int64_t>(bytes));
     insert.Text(4, canonicalSource.empty() ? source : canonicalSource);
+    insert.Text(5, title);
     insert.Next();
     transaction.Commit();
     ++_revision;
     return CachedAudio{pattern,
                        canonicalSource.empty() ? source : canonicalSource,
+                       title,
                        std::move(lease)};
   } catch (...) {
     std::error_code error;

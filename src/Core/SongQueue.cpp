@@ -4,16 +4,18 @@
 namespace termify::core {
 
 namespace {
-QueuedSong makeQueuedSong(uint64 id, string song, QueueOrigin origin) {
+QueuedSong makeQueuedSong(uint64 id, string song, string title,
+                          QueueOrigin origin) {
   QueuedSong queued;
   queued.id = id;
   queued.query = std::move(song);
+  queued.title = std::move(title);
   queued.origin = origin;
   return queued;
 }
 } // namespace
 
-std::optional<uint64> SongQueue::Push(string song) {
+std::optional<uint64> SongQueue::Push(string song, string title) {
   std::lock_guard lock(_queueMtx);
   if (song.empty()) {
     return std::nullopt;
@@ -23,20 +25,24 @@ std::optional<uint64> SongQueue::Push(string song) {
         return queued.query == song ||
                (!queued.source.empty() && queued.source == song);
       });
-  if (duplicate != _queue.end())
+  if (duplicate != _queue.end()) {
+    if (!title.empty())
+      duplicate->title = std::move(title);
     return duplicate->id;
+  }
   if (_queue.size() >= MAX_SONGS)
     return std::nullopt;
   const uint64 id = _nextId++;
-  _queue.push_back(makeQueuedSong(id, std::move(song), QueueOrigin::Manual));
+  _queue.push_back(makeQueuedSong(id, std::move(song), std::move(title),
+                                  QueueOrigin::Manual));
   return id;
 }
 
-std::optional<uint64> SongQueue::PushNext(string song) {
-  return PrioritizeNext(std::move(song)).id;
+std::optional<uint64> SongQueue::PushNext(string song, string title) {
+  return PrioritizeNext(std::move(song), std::move(title)).id;
 }
 
-QueueNextOutcome SongQueue::PrioritizeNext(string song) {
+QueueNextOutcome SongQueue::PrioritizeNext(string song, string title) {
   std::lock_guard lock(_queueMtx);
   if (song.empty())
     return {QueueNextResult::Invalid, std::nullopt};
@@ -44,11 +50,16 @@ QueueNextOutcome SongQueue::PrioritizeNext(string song) {
     return queued.query == song ||
            (!queued.source.empty() && queued.source == song);
   };
-  if (!_queue.empty() && matches(_queue.front()))
+  if (!_queue.empty() && matches(_queue.front())) {
+    if (!title.empty())
+      _queue.front().title = std::move(title);
     return {QueueNextResult::AlreadyNext, _queue.front().id};
+  }
   const auto duplicate = std::find_if(_queue.begin(), _queue.end(), matches);
   if (duplicate != _queue.end()) {
     QueuedSong queued = std::move(*duplicate);
+    if (!title.empty())
+      queued.title = std::move(title);
     queued.origin = QueueOrigin::Manual;
     _queue.erase(duplicate);
     const auto id = queued.id;
@@ -58,23 +69,64 @@ QueueNextOutcome SongQueue::PrioritizeNext(string song) {
   if (_queue.size() >= MAX_SONGS)
     return {QueueNextResult::Full, std::nullopt};
   const uint64 id = _nextId++;
-  _queue.push_front(makeQueuedSong(id, std::move(song), QueueOrigin::Manual));
+  _queue.push_front(makeQueuedSong(id, std::move(song), std::move(title),
+                                   QueueOrigin::Manual));
   return {QueueNextResult::Added, id};
 }
 
-bool SongQueue::PushPlaylistCycle(vector<string> songs) {
+bool SongQueue::PushPlaylistCycle(vector<TrackRequest> songs) {
   std::lock_guard lock(_queueMtx);
   if (songs.empty() || !_queue.empty() || songs.size() > MAX_SONGS ||
       std::any_of(songs.begin(), songs.end(),
-                  [](const auto &song) { return song.empty(); })) {
+                  [](const auto &song) { return song.source.empty(); })) {
     return false;
   }
   for (auto &song : songs) {
     const uint64 id = _nextId++;
-    _queue.push_back(
-        makeQueuedSong(id, std::move(song), QueueOrigin::Playlist));
+    _queue.push_back(makeQueuedSong(id, std::move(song.source),
+                                    std::move(song.title),
+                                    QueueOrigin::Playlist));
   }
   return true;
+}
+
+bool SongQueue::AppendPlaylist(TrackRequest song, bool loopContinuation) {
+  std::lock_guard lock(_queueMtx);
+  if (song.source.empty() || _queue.size() >= MAX_SONGS)
+    return false;
+  const uint64 id = _nextId++;
+  _queue.push_back(makeQueuedSong(id, std::move(song.source),
+                                  std::move(song.title),
+                                  loopContinuation ? QueueOrigin::PlaylistLoop
+                                                   : QueueOrigin::Playlist));
+  return true;
+}
+
+std::optional<QueuedSong> SongQueue::DropLastPlaylist() {
+  std::lock_guard lock(_queueMtx);
+  const auto reverse = std::find_if(
+      _queue.rbegin(), _queue.rend(),
+      [](const auto &song) { return song.origin != QueueOrigin::Manual; });
+  if (reverse == _queue.rend())
+    return std::nullopt;
+  const auto item = std::prev(reverse.base());
+  QueuedSong removed = std::move(*item);
+  _queue.erase(item);
+  return removed;
+}
+
+vector<QueuedSong> SongQueue::RemoveLoopContinuations() {
+  std::lock_guard lock(_queueMtx);
+  vector<QueuedSong> removed;
+  for (auto item = _queue.begin(); item != _queue.end();) {
+    if (item->origin == QueueOrigin::PlaylistLoop) {
+      removed.push_back(std::move(*item));
+      item = _queue.erase(item);
+    } else {
+      ++item;
+    }
+  }
+  return removed;
 }
 
 std::optional<QueuedSong> SongQueue::PopForPlayback() {
@@ -98,7 +150,8 @@ std::optional<QueuedSong> SongQueue::ClaimForPrefetch() {
   return std::nullopt;
 }
 
-bool SongQueue::MarkReady(uint64 id, string path, string source, bool temporary,
+bool SongQueue::MarkReady(uint64 id, string path, string source, string title,
+                          bool temporary,
                           std::shared_ptr<CacheLease> lease) {
   std::lock_guard lock(_queueMtx);
   const auto song =
@@ -110,6 +163,8 @@ bool SongQueue::MarkReady(uint64 id, string path, string source, bool temporary,
   song->state = QueueState::Ready;
   song->preparedPath = std::move(path);
   song->source = std::move(source);
+  if (!title.empty())
+    song->title = std::move(title);
   song->temporary = temporary;
   song->cacheLease = std::move(lease);
   song->error.clear();

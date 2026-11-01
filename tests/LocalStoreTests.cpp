@@ -39,6 +39,11 @@ int main() {
   {
     LocalStore store(data, cache, 100);
     CHECK(store.History().empty());
+    CHECK(!store.SavedVolume());
+    store.SaveVolume(45);
+    CHECK(store.SavedVolume() == 45);
+    store.SaveVolume(125);
+    CHECK(store.SavedVolume() == 100);
     store.Record(
         {0, "source ' quoted", "Été 🎵", "Artist", "Album", 123, 42, false});
     store.QueueRecord({0, "second", "Second", {}, {}, 60, 43, false});
@@ -71,10 +76,13 @@ int main() {
   } // Destructor flushes asynchronous history writes.
   {
     LocalStore store(data, cache, 100);
+    CHECK(store.SavedVolume() == 100);
     const auto history = store.History();
     CHECK(history.size() == 2);
     CHECK(history[0].source == "second" && history[1].title == "Été 🎵");
     CHECK(history[1].durationSeconds == 123 && history[1].playedAt == 42);
+    CHECK(store.TrackTitle("second") == "Second");
+    CHECK(!store.TrackTitle("missing"));
     CHECK(store.FindAudio("first"));
     LocalStore other(data, cache, 100);
     auto lease = other.FindAudio("first");
@@ -145,6 +153,7 @@ int main() {
           searchTracks[0].source == searchResult.source &&
           searchTracks[0].title == searchResult.title &&
           !searchTracks[0].cached);
+    CHECK(store.TrackTitle(searchResult.source) == searchResult.title);
     CHECK(store.DeletePlaylist(searchPlaylist));
     CHECK(store.AddHistoryToPlaylist(playlist, history[1].id) ==
           AddTrackResult::Added);
@@ -207,7 +216,7 @@ int main() {
   sqlite3 *database = nullptr;
   CHECK(sqlite3_open((data / "library.sqlite3").c_str(), &database) ==
         SQLITE_OK);
-  CHECK(sqlite3_exec(database, "PRAGMA user_version=3", nullptr, nullptr,
+  CHECK(sqlite3_exec(database, "PRAGMA user_version=4", nullptr, nullptr,
                      nullptr) == SQLITE_OK);
   sqlite3_close(database);
   bool rejected = false;

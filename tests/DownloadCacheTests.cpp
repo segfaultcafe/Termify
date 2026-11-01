@@ -51,6 +51,8 @@ int main(int argc, char **argv) {
       path.replace(path.find("%(ext)s"), 7, "mp3");
       std::ofstream output(path, std::ios::binary);
       output << "test audio payload";
+      std::cout << "https://www.youtube.com/watch?v=resolved\x1f"
+                   "Resolved title\n";
       return 0;
     }
     return 1;
@@ -99,10 +101,15 @@ int main(int argc, char **argv) {
     LocalStore store(root / "data", root / "cache");
     const auto first = downloader.PrepareAudio("some song", nullptr, &store);
     CHECK(!first.temporary && first.cacheLease && count("download") == 1);
+    CHECK(first.title == "Resolved title");
     cachedPath = first.path;
     const auto second = downloader.PrepareAudio("some song", nullptr, &store);
     CHECK(second.path == first.path && count("download") == 1);
     CHECK(second.source == "https://www.youtube.com/watch?v=resolved");
+    CHECK(second.title == "Resolved title");
+    store.Record({0, second.source, "Stored title", {}, {}, 1, 1, false});
+    const auto titled = downloader.PrepareAudio(second.source, nullptr, &store);
+    CHECK(titled.title == "Resolved title");
   }
   {
     LocalStore reopened(root / "data", root / "cache");
@@ -115,6 +122,7 @@ int main(int argc, char **argv) {
     auto local = downloader.PrepareAudio(refreshed.path, nullptr, &reopened);
     CHECK(!local.temporary && local.path == refreshed.path &&
           count("download") == 2);
+    CHECK(local.title == fs::path(refreshed.path).stem().string());
   }
   {
     LocalStore full(root / "small-data", root / "small-cache", 0);
