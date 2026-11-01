@@ -74,8 +74,9 @@ terminal or system in a broken state.
   replenished looping-playlist queues. Favorites and playlist import/export
   remain future work.
 - **v0.6 — Queue management (in development):** select upcoming tracks and
-  play now, remove, or reorder them from the Player or CLI while preserving
-  manual-request priority and leaving saved playlists untouched.
+  play them immediately from the Player, with precise CLI removal and
+  reordering that preserves manual-request priority and leaves saved playlists
+  untouched.
 - **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
   add verified update checks and rollback, and test packages on clean supported
   distributions.

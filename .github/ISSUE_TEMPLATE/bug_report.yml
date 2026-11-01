@@ -14,7 +14,7 @@ body:
     attributes:
       label: Termify version
       description: Run `termify --version` and paste the complete output.
-      placeholder: termify 0.6.0
+      placeholder: termify 0.6.1
     validations:
       required: true
 

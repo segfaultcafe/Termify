@@ -74,12 +74,11 @@ toggle to remove future-cycle entries without touching the current cycle or
 manual requests.
 
 The three visible **UP NEXT** rows are one `ListView` keyed by stable queue
-IDs. Selecting a row exposes Play Now, Remove, Move Up, Move Down, and Clear
-buttons in the Player action row; double-click and Enter take the same Play Now
-path. Clear changes to a Confirm button before mutating the queue. Reordering
-is allowed within the manual or playlist tier but cannot move a playlist track
-ahead of a manual request. Removing or moving playlist-origin entries changes
-only the live session and never writes to `LocalStore`. The equivalent CLI
+IDs. Double-click and Enter take the same Play Now path. Queue editing remains
+in the shared command prompt so the Player keeps its compact help row.
+Reordering is allowed within the manual or playlist tier but cannot move a
+playlist track ahead of a manual request. Removing or moving playlist-origin
+entries changes only the live session and never writes to `LocalStore`. CLI
 forms use the visible one-based positions: `queue play N`, `queue remove N`,
 `queue move N up|down`, and `queue clear`.
 

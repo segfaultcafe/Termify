@@ -147,13 +147,6 @@ Application::Application() {
   _playerVolume = &_widgets.Emplace<tui::Knob>("player-volume");
   _queueRule = &_widgets.Emplace<tui::Rule>("queue-rule");
   _queueList = &_widgets.Emplace<tui::ListView>("queue-list");
-  _queuePlayNow =
-      &_widgets.Emplace<tui::Button>("queue-play-now", "PLAY NOW");
-  _queueRemove =
-      &_widgets.Emplace<tui::Button>("queue-remove", "REMOVE");
-  _queueUp = &_widgets.Emplace<tui::Button>("queue-up", "MOVE UP");
-  _queueDown = &_widgets.Emplace<tui::Button>("queue-down", "MOVE DOWN");
-  _queueClear = &_widgets.Emplace<tui::Button>("queue-clear", "CLEAR");
   _queueList->SetEmptyText("Queue is empty");
   _queueList->SetDoubleClickActivates(true);
   _playerAddPlaylist = &_widgets.Emplace<tui::Button>(
@@ -262,9 +255,6 @@ void Application::runInteractiveInput() {
     bool addPickerTrack = false, createPickerPlaylist = false;
     bool closePicker = false;
     std::optional<uint64> queuePlayNow;
-    std::optional<uint64> queueRemove;
-    std::optional<std::pair<uint64, int>> queueMove;
-    bool queueClear = false, queueClearConfirmed = false;
     {
       std::lock_guard widgetLock(_widgetMtx);
       const auto oldTab = _tabs->Selected();
@@ -286,7 +276,6 @@ void Application::runInteractiveInput() {
         _widgets.Dispatch(*event);
       }
       if (_tabs->Selected() != oldTab) {
-        _queueClearArmed = false;
         if (_playlistPrompt != PlaylistPrompt::None)
           cancelPrompt = true;
         applyView();
@@ -395,25 +384,6 @@ void Application::runInteractiveInput() {
           _queueList->TakeDoubleClickActivation().has_value();
       if (activateQueued || doubleClickQueued)
         queuePlayNow = selectedQueueId();
-      if (_queuePlayNow->TakeActivation())
-        queuePlayNow = selectedQueueId();
-      if (_queueRemove->TakeActivation())
-        queueRemove = selectedQueueId();
-      if (_queueUp->TakeActivation()) {
-        if (const auto id = selectedQueueId())
-          queueMove = std::pair<uint64, int>{*id, -1};
-      }
-      if (_queueDown->TakeActivation()) {
-        if (const auto id = selectedQueueId())
-          queueMove = std::pair<uint64, int>{*id, 1};
-      }
-      queueClear = _queueClear->TakeActivation();
-      if (queuePlayNow || queueRemove || queueMove)
-        _queueClearArmed = false;
-      if (queueClear) {
-        queueClearConfirmed = _queueClearArmed;
-        _queueClearArmed = !_queueClearArmed;
-      }
       if (key && key->key == tui::Key::Character &&
           (key->text == "a" || key->text == "A") &&
           _widgets.FocusedId() == "history-list")
@@ -500,19 +470,6 @@ void Application::runInteractiveInput() {
       closePlaylistPicker();
     if (queuePlayNow)
       _mixer->PlayQueuedNow(*queuePlayNow);
-    if (queueRemove)
-      _mixer->RemoveQueued(*queueRemove);
-    if (queueMove)
-      _mixer->MoveQueued(queueMove->first, queueMove->second);
-    if (queueClear) {
-      if (queueClearConfirmed) {
-        _mixer->ClearQueue();
-        _mixer->PublishMessage("Upcoming tracks cleared.");
-      } else {
-        _queueClearArmed = true;
-        _mixer->PublishMessage("Choose CONFIRM CLEAR to clear the queue.");
-      }
-    }
     if (searchSubmission && !searchSubmission->empty())
       performSearch(*searchSubmission);
     if (submission) {
@@ -604,11 +561,6 @@ void Application::configureWidgets(int width) {
   _queueRule->SetBounds({0, 9, width, 1});
   _playerAddPlaylist->SetBounds({width - 22, 9, 19, 1});
   _queueList->SetBounds({3, 10, contentWidth, 3});
-  _queuePlayNow->SetBounds({3, 17, 12, 1});
-  _queueRemove->SetBounds({16, 17, 10, 1});
-  _queueUp->SetBounds({27, 17, 9, 1});
-  _queueDown->SetBounds({37, 17, 11, 1});
-  _queueClear->SetBounds({49, 17, 12, 1});
   _waveformRule->SetBounds({0, 13, width, 1});
   _waveform->SetBounds({3, 14, contentWidth, 1});
   _separator->SetBounds({0, 15, width, 1});
@@ -628,8 +580,6 @@ void Application::applyView() {
       search && !_searchPickerOpen && !_searchLoading &&
       !_searchResultItems.empty();
   const bool historyActions = history && !_historyEntries.empty();
-  const bool queueActions = player && !_playerPickerOpen &&
-                            _queueList->SelectedId().has_value();
   _historyRule->SetVisible(history);
   _historyList->SetVisible(history);
   _historyPlayNow->SetVisible(historyActions);
@@ -662,10 +612,7 @@ void Application::applyView() {
            _playerPlayPause, _playerNext, _playerStop, _playerAddPlaylist,
            _playerRepeat, _playerVolume, _queueList})
     widget->SetVisible(player && !_playerPickerOpen);
-  for (auto *widget : std::vector<tui::Widget *>{
-           _queuePlayNow, _queueRemove, _queueUp, _queueDown, _queueClear})
-    widget->SetVisible(queueActions);
-  _help->SetVisible(!queueActions);
+  _help->SetVisible(true);
   if (_widgets.FocusedId() &&
       _widgets.FocusedId()->starts_with("history-") && !historyActions &&
       _widgets.FocusedId() != "history-list")
@@ -679,10 +626,6 @@ void Application::applyView() {
       (_widgets.FocusedId()->starts_with("player-") ||
        _widgets.FocusedId()->starts_with("queue-")))
     _widgets.Focus("tabs");
-  if (!queueActions && _widgets.FocusedId() &&
-      _widgets.FocusedId()->starts_with("queue-") &&
-      _widgets.FocusedId() != "queue-list")
-    _widgets.Focus(player ? "queue-list" : "tabs");
   if (!search && !_playerPickerOpen && _widgets.FocusedId() &&
       _widgets.FocusedId()->starts_with("search-"))
     _widgets.Focus("tabs");
@@ -1480,9 +1423,6 @@ void Application::renderUi() {
              tui::Canvas::Clip(queueLabel, contentWidth - 7)});
   }
   _queueList->SetItems(std::move(queueItems));
-  if (queue.empty())
-    _queueClearArmed = false;
-  _queueClear->SetLabel(_queueClearArmed ? "CONFIRM" : "CLEAR");
   applyView();
 
   _waveform->SetText(buildWaveform(static_cast<std::size_t>(contentWidth)),

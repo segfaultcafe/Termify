@@ -19,8 +19,7 @@
 - Responsive, centered terminal interface with a live waveform
 - Title, artist, album, elapsed time, duration, and playback progress
 - Bounded 20-track queue with one-at-a-time background prefetching
-- Selectable upcoming tracks with play-now, remove, reorder, and safe clear
-  controls
+- Selectable upcoming tracks with play-now activation and precise CLI editing
 - Player, History, Playlists, and YouTube Search tabs with keyboard and mouse
   controls
 - Clickable playback controls, a track-repeat toggle, and a mouse-wheel
@@ -44,9 +43,10 @@ command prompt.
 volume between sessions, shows resolved song titles in **UP NEXT**, and keeps a
 looping playlist's queue visibly continuous between cycles.
 
-The in-development **v0.6.0** makes **UP NEXT** directly manageable with
-mouse/keyboard actions and equivalent `queue` commands. Queue edits affect
-only the current playback session; saved playlist order remains unchanged.
+The in-development **v0.6.1** makes **UP NEXT** selectable for immediate
+playback and adds precise `queue` editing commands. Queue edits affect only the
+current playback session; saved playlist order remains unchanged. The Player's
+existing help row remains uncluttered.
 
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
@@ -209,7 +209,7 @@ next
   pending work, and closes Termify through the same clean shutdown path as the
   `quit` command.
 - The frame title shows the build version, for example
-  `TERMIFY - terminal audio player - v0.6.0`.
+  `TERMIFY - terminal audio player - v0.6.1`.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
 - **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
   bar is focused; **Esc** returns to the command prompt.
@@ -241,12 +241,11 @@ next
 - The Player's **ADD TO PLAYLIST** button opens the same picker for the current
   track, including the inline **NEW PLAYLIST** flow. Cached/history eligibility
   is still enforced before the current track can be saved.
-- **UP NEXT** is a selectable three-row list. Select a queued track to expose
-  **PLAY NOW**, **REMOVE**, **MOVE UP**, **MOVE DOWN**, and **CLEAR** in the
-  Player's action row; double-clicking or pressing Enter also plays the
-  selected track now. **CLEAR** requires a second confirmation click. Moving
-  tracks preserves manual Play Next priority over playlist tracks, and edits
-  never rewrite the saved playlist.
+- **UP NEXT** is a selectable three-row list. Double-clicking or pressing
+  Enter plays the selected track now. Use `queue remove N`, `queue move N
+  up|down`, or `queue clear` for precise queue editing without replacing the
+  Player's compact help row. Moving tracks preserves manual Play Next priority
+  over playlist tracks, and edits never rewrite the saved playlist.
 - The Playlists tab has separate playlist and track lists. Click a row or use
   the arrow keys. **PLAYLIST COMMANDS** groups **NEW**, **RENAME**, and
   **DELETE** with **PLAY SELECTED**, **SHUFFLE**, and **LOOP**; **TRACK
