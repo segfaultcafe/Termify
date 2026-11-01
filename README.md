@@ -45,17 +45,17 @@ looping playlist's queue visibly continuous between cycles.
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
 
-The latest packaged release is **v0.4.0**.
+The latest packaged release is **v0.5.0**.
 
 ## Install the Linux release
 
-Download `termify-v0.4.0-linux-x86_64.tar.gz` and its checksum from the
-[v0.4.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.4.0).
+Download `termify-v0.5.0-linux-x86_64.tar.gz` and its checksum from the
+[v0.5.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.5.0).
 
 ```bash
-sha256sum -c termify-v0.4.0-linux-x86_64.tar.gz.sha256
-tar -xzf termify-v0.4.0-linux-x86_64.tar.gz
-cd termify-v0.4.0-linux-x86_64
+sha256sum -c termify-v0.5.0-linux-x86_64.tar.gz.sha256
+tar -xzf termify-v0.5.0-linux-x86_64.tar.gz
+cd termify-v0.5.0-linux-x86_64
 ./install.sh
 ```
 
@@ -108,7 +108,7 @@ sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The v0.4.0 prebuilt binary is produced on x86_64 Arch Linux and expects
+above. The v0.5.0 prebuilt binary is produced on x86_64 Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
 `libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
 `libasound.so.2`. It is tested on the build host, not certified across all
