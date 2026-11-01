@@ -138,6 +138,44 @@ int main() {
   }
 
   {
+    MixerRig rig;
+    CHECK(rig.mixer->StartPlaylist({{"song-a"}, {"song-b"}, {"song-c"}},
+                                   "Editable", false, false));
+    CHECK(rig.mixer->AddToQueue("manual-next"));
+    auto upcoming = rig.queue.Snapshot(4);
+    CHECK(upcoming.size() == 4);
+    const auto manualId = upcoming[0].id;
+    const auto songBId = upcoming[2].id;
+    CHECK(!rig.mixer->MoveQueued(upcoming[1].id, -1));
+    CHECK(rig.queue.Snapshot(4)[0].id == manualId);
+    CHECK(rig.mixer->MoveQueued(songBId, 1));
+    CHECK(rig.queue.Snapshot(4)[3].id == songBId);
+    CHECK(rig.mixer->RemoveQueued(songBId));
+    CHECK(rig.queue.Snapshot(4).size() == 3);
+    const auto songCId = rig.queue.Snapshot(4).back().id;
+    CHECK(rig.mixer->PlayQueuedNow(songCId));
+    CHECK(rig.queue.Snapshot(1)[0].id == songCId);
+    CHECK(rig.queue.Snapshot(1)[0].origin == QueueOrigin::Manual);
+  }
+
+  {
+    MixerRig rig;
+    CHECK(rig.queue.Push("one"));
+    CHECK(rig.queue.Push("two"));
+    CHECK(rig.queue.Push("three"));
+    Cli cli(rig.mixer);
+    cli.Execute("queue move 3 UP");
+    CHECK(rig.queue.Snapshot(3)[1].query == "three");
+    cli.Execute("queue remove 2");
+    CHECK(rig.queue.Snapshot(3).size() == 2);
+    CHECK(rig.queue.Snapshot(2)[1].query == "two");
+    cli.Execute("queue play 2");
+    CHECK(rig.queue.Snapshot(1)[0].query == "two");
+    cli.Execute("queue clear");
+    CHECK(rig.queue.Empty());
+  }
+
+  {
     MixerRig rig(true);
     CHECK(rig.mixer->PlayNow("idle-play-now-regression"));
     const auto deadline = std::chrono::steady_clock::now() +

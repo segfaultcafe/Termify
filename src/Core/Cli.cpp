@@ -34,7 +34,8 @@ std::optional<string> commandHelp(const string &topic) {
   case Command::SEARCH:
     return "search — open YouTube search; enter a query in its search box";
   case Command::QUEUE:
-    return "queue — show how many tracks are waiting";
+    return "queue [play N|remove N|move N up|down|clear] — inspect or edit "
+           "upcoming tracks";
   case Command::CLEAR:
     return "clear — remove all upcoming tracks";
   case Command::STOP:
@@ -175,6 +176,55 @@ void Cli::Execute(const string &line) {
     _mixer->Resume();
     break;
   case Command::QUEUE: {
+    const auto songs = ctx->trackQueue->Snapshot(SongQueue::MAX_SONGS);
+    const auto normalized = [](string value) {
+      std::transform(value.begin(), value.end(), value.begin(),
+                     [](unsigned char ch) { return std::tolower(ch); });
+      return value;
+    };
+    const string action = args.size() > 1 ? normalized(args[1]) : string{};
+    const string direction = args.size() > 3 ? normalized(args[3]) : string{};
+    const auto selectedSong = [&](const string &position)
+        -> std::optional<QueuedSong> {
+      std::size_t parsed = 0;
+      const auto [end, error] = std::from_chars(
+          position.data(), position.data() + position.size(), parsed);
+      if (error != std::errc{} || end != position.data() + position.size() ||
+          parsed == 0 || parsed > songs.size())
+        return std::nullopt;
+      return songs[parsed - 1];
+    };
+    if (args.size() == 2 && action == "clear") {
+      _mixer->ClearQueue();
+      _mixer->PublishMessage("Upcoming tracks cleared.");
+      break;
+    }
+    if (args.size() == 3 && (action == "play" || action == "remove")) {
+      const auto song = selectedSong(args[2]);
+      if (!song) {
+        _mixer->PublishMessage("Choose a valid queue position.", true);
+      } else if (action == "play") {
+        _mixer->PlayQueuedNow(song->id);
+      } else {
+        _mixer->RemoveQueued(song->id);
+      }
+      break;
+    }
+    if (args.size() == 4 && action == "move" &&
+        (direction == "up" || direction == "down")) {
+      const auto song = selectedSong(args[2]);
+      if (!song)
+        _mixer->PublishMessage("Choose a valid queue position.", true);
+      else
+        _mixer->MoveQueued(song->id, direction == "up" ? -1 : 1);
+      break;
+    }
+    if (args.size() != 1) {
+      _mixer->PublishMessage(
+          "Usage: queue [play N | remove N | move N up|down | clear]",
+          true);
+      break;
+    }
     const auto count = ctx->trackQueue->Size();
     if (_mixer->IsPlaylistLooping()) {
       _mixer->PublishMessage("The playlist queue loops indefinitely (" +

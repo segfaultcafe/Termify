@@ -18,7 +18,8 @@ void printHelp() {
       << "  play <song|URL|file>  pause  resume  next  repeat\n"
       << "  volume <0-100|+N|-N>  seek <seconds|M:SS>\n"
       << "  history  playlists  search  player\n"
-      << "  queue  clear  stop  help  exit\n";
+      << "  queue [play N|remove N|move N up|down|clear]\n"
+      << "  clear  stop  help  exit\n";
 }
 } // namespace
 

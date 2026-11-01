@@ -129,6 +129,63 @@ vector<QueuedSong> SongQueue::RemoveLoopContinuations() {
   return removed;
 }
 
+std::optional<QueuedSong> SongQueue::Remove(uint64 id) {
+  std::lock_guard lock(_queueMtx);
+  const auto item =
+      std::find_if(_queue.begin(), _queue.end(),
+                   [id](const auto &song) { return song.id == id; });
+  if (item == _queue.end())
+    return std::nullopt;
+  QueuedSong removed = std::move(*item);
+  _queue.erase(item);
+  return removed;
+}
+
+std::optional<QueuedSong> SongQueue::PromoteToFront(uint64 id) {
+  std::lock_guard lock(_queueMtx);
+  const auto item =
+      std::find_if(_queue.begin(), _queue.end(),
+                   [id](const auto &song) { return song.id == id; });
+  if (item == _queue.end())
+    return std::nullopt;
+  if (item != _queue.begin()) {
+    QueuedSong promoted = std::move(*item);
+    _queue.erase(item);
+    _queue.push_front(std::move(promoted));
+  }
+  _queue.front().origin = QueueOrigin::Manual;
+  return _queue.front();
+}
+
+QueueMoveResult SongQueue::Move(uint64 id, int direction) {
+  std::lock_guard lock(_queueMtx);
+  const auto item =
+      std::find_if(_queue.begin(), _queue.end(),
+                   [id](const auto &song) { return song.id == id; });
+  if (item == _queue.end())
+    return QueueMoveResult::NotFound;
+  if (direction == 0)
+    return QueueMoveResult::Boundary;
+
+  auto target = item;
+  if (direction < 0) {
+    if (item == _queue.begin())
+      return QueueMoveResult::Boundary;
+    --target;
+  } else {
+    ++target;
+    if (target == _queue.end())
+      return QueueMoveResult::Boundary;
+  }
+
+  const bool itemIsManual = item->origin == QueueOrigin::Manual;
+  const bool targetIsManual = target->origin == QueueOrigin::Manual;
+  if (itemIsManual != targetIsManual)
+    return QueueMoveResult::PriorityBoundary;
+  std::iter_swap(item, target);
+  return QueueMoveResult::Moved;
+}
+
 std::optional<QueuedSong> SongQueue::PopForPlayback() {
   std::lock_guard lock(_queueMtx);
   if (_queue.empty() || _queue.front().state == QueueState::Downloading) {

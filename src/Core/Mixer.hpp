@@ -29,6 +29,9 @@ public:
   void NextSong();
   void Stop(bool force = false, bool clearQueue = true);
   void ClearQueue();
+  bool PlayQueuedNow(uint64 id);
+  bool RemoveQueued(uint64 id);
+  bool MoveQueued(uint64 id, int direction);
   void SetVolume(int percent);
   bool SeekToSeconds(std::int64_t seconds, bool announce = true);
   bool SeekRelativeSeconds(std::int64_t seconds, bool announce = true);

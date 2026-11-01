@@ -11,6 +11,7 @@ namespace termify::core {
 enum class QueueState { Pending, Downloading, Ready, Failed };
 enum class QueueOrigin { Manual, Playlist, PlaylistLoop };
 enum class QueueNextResult { Added, Moved, AlreadyNext, Full, Invalid };
+enum class QueueMoveResult { Moved, NotFound, Boundary, PriorityBoundary };
 
 struct QueueNextOutcome {
   QueueNextResult result{QueueNextResult::Invalid};
@@ -49,6 +50,9 @@ public:
   bool AppendPlaylist(TrackRequest song, bool loopContinuation = false);
   std::optional<QueuedSong> DropLastPlaylist();
   vector<QueuedSong> RemoveLoopContinuations();
+  std::optional<QueuedSong> Remove(uint64 id);
+  std::optional<QueuedSong> PromoteToFront(uint64 id);
+  QueueMoveResult Move(uint64 id, int direction);
   std::optional<QueuedSong> PopForPlayback();
   std::optional<QueuedSong> ClaimForPrefetch();
   bool MarkReady(uint64 id, string path, string source, string title,

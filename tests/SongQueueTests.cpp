@@ -129,5 +129,31 @@ int main() {
   CHECK(queue.Size() == 1);
   queue.Clear();
   CHECK(!queue.DropLastPlaylist());
+
+  const auto manualA = queue.PushNext("manual-a");
+  const auto manualB = queue.PushNext("manual-b");
+  CHECK(manualA && manualB);
+  CHECK(queue.AppendPlaylist({"playlist-a", "Playlist A"}));
+  CHECK(queue.AppendPlaylist({"playlist-b", "Playlist B"}, true));
+  auto editable = queue.Snapshot(4);
+  const auto playlistA = editable[2].id;
+  const auto playlistB = editable[3].id;
+  CHECK(queue.Move(*manualA, -1) ==
+        termify::core::QueueMoveResult::Moved);
+  CHECK(queue.Snapshot(4)[0].id == *manualA);
+  CHECK(queue.Move(playlistA, -1) ==
+        termify::core::QueueMoveResult::PriorityBoundary);
+  CHECK(queue.Move(playlistB, -1) ==
+        termify::core::QueueMoveResult::Moved);
+  CHECK(queue.Snapshot(4)[2].id == playlistB);
+  const auto removed = queue.Remove(playlistB);
+  CHECK(removed && removed->query == "playlist-b");
+  CHECK(queue.Size() == 3);
+  const auto promoted = queue.PromoteToFront(playlistA);
+  CHECK(promoted && promoted->id == playlistA);
+  CHECK(promoted->origin == termify::core::QueueOrigin::Manual);
+  CHECK(queue.Snapshot(1)[0].id == playlistA);
+  CHECK(!queue.Remove(999999));
+  CHECK(!queue.PromoteToFront(999999));
   return 0;
 }

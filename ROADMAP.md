@@ -69,10 +69,14 @@ terminal or system in a broken state.
   controls, plus a keyboard- and mouse-navigable YouTube search-results tab
   with Play Now, Play Next, and playlist-picker actions. Ten-result searches
   use a bounded 30-minute session cache while retaining CLI queueing.
-- **v0.5 — Daily usability (release candidate):** mouse and command-line
+- **v0.5 — Daily usability (released):** mouse and command-line
   seeking, persistent volume, metadata-rich queue labels, and continuously
   replenished looping-playlist queues. Favorites and playlist import/export
   remain future work.
+- **v0.6 — Queue management (released):** select upcoming tracks and
+  play them immediately from the Player, with precise CLI removal and
+  reordering that preserves manual-request priority and leaves saved playlists
+  untouched.
 - **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
   add verified update checks and rollback, and test packages on clean supported
   distributions.

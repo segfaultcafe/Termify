@@ -273,6 +273,51 @@ void Mixer::Stop(bool force, bool clearQueue) {
 
 void Mixer::ClearQueue() { clearQueue(true); }
 
+bool Mixer::PlayQueuedNow(uint64 id) {
+  const auto song = _ctx.trackQueue->PromoteToFront(id);
+  if (!song) {
+    dispatchResponse("That queued track is no longer available.", true);
+    return false;
+  }
+  const string displayName = song->title.empty() ? song->query : song->title;
+  Stop(true, false);
+  dispatchResponse("Playing now: " + displayName);
+  _prefetchCv.notify_one();
+  return true;
+}
+
+bool Mixer::RemoveQueued(uint64 id) {
+  const auto song = _ctx.trackQueue->Remove(id);
+  if (!song) {
+    dispatchResponse("That queued track is no longer available.", true);
+    return false;
+  }
+  const string displayName = song->title.empty() ? song->query : song->title;
+  cleanupPrepared(*song);
+  replenishPlaylistQueue();
+  dispatchResponse("Removed from queue: " + displayName);
+  _schedulerCv.notify_one();
+  _prefetchCv.notify_one();
+  return true;
+}
+
+bool Mixer::MoveQueued(uint64 id, int direction) {
+  const auto result = _ctx.trackQueue->Move(id, direction);
+  if (result == QueueMoveResult::Moved) {
+    dispatchResponse(direction < 0 ? "Queued track moved up."
+                                   : "Queued track moved down.");
+    return true;
+  }
+  if (result == QueueMoveResult::NotFound)
+    dispatchResponse("That queued track is no longer available.", true);
+  else if (result == QueueMoveResult::PriorityBoundary)
+    dispatchResponse("Manual tracks keep priority over playlist tracks.",
+                     true);
+  else
+    dispatchResponse("That track cannot move any farther.", true);
+  return false;
+}
+
 void Mixer::clearQueue(bool cancelPlaylist) {
   if (cancelPlaylist) {
     std::lock_guard playlistLock(_playlistMtx);
