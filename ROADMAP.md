@@ -73,7 +73,7 @@ terminal or system in a broken state.
   seeking, persistent volume, metadata-rich queue labels, and continuously
   replenished looping-playlist queues. Favorites and playlist import/export
   remain future work.
-- **v0.6 — Queue management (in development):** select upcoming tracks and
+- **v0.6 — Queue management (released):** select upcoming tracks and
   play them immediately from the Player, with precise CLI removal and
   reordering that preserves manual-request priority and leaves saved playlists
   untouched.
