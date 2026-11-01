@@ -2,14 +2,10 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <ctime>
-#include <fcntl.h>
 #include <set>
 #include <sqlite3.h>
 #include <stdexcept>
-#include <sys/file.h>
-#include <unistd.h>
 #include <utility>
 
 namespace termify::core {
@@ -74,27 +70,9 @@ private:
   bool _committed{false};
 };
 
-std::filesystem::path xdgDirectory(const char *variable, const char *fallback) {
-  if (const char *value = std::getenv(variable);
-      value && *value && std::filesystem::path(value).is_absolute())
-    return std::filesystem::path(value) / "termify";
-  const char *home = std::getenv("HOME");
-  if (!home || !*home || !std::filesystem::path(home).is_absolute())
-    throw std::runtime_error(
-        "HOME or an absolute XDG directory is required for storage");
-  return std::filesystem::path(home) / fallback / "termify";
-}
-
 std::shared_ptr<CacheLease> lockFile(const std::filesystem::path &path,
-                                     int mode) {
-  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-  if (fd < 0)
-    return {};
-  if (flock(fd, mode | LOCK_NB) != 0) {
-    close(fd);
-    return {};
-  }
-  return std::make_shared<CacheLease>(fd);
+                                     platform::FileLockMode mode) {
+  return platform::CurrentPlatform().Files().TryLock(path, mode);
 }
 
 std::string playlistName(std::string value) {
@@ -114,13 +92,12 @@ std::string playlistName(std::string value) {
 }
 } // namespace
 
-CacheLease::~CacheLease() { close(fd); }
-
 std::filesystem::path LocalStore::DefaultDataDirectory() {
-  return xdgDirectory("XDG_DATA_HOME", ".local/share");
+  return platform::CurrentPlatform().Files().UserDataDirectory("termify");
 }
 std::filesystem::path LocalStore::DefaultCacheDirectory() {
-  return xdgDirectory("XDG_CACHE_HOME", ".cache") / "audio";
+  return platform::CurrentPlatform().Files().UserCacheDirectory("termify") /
+         "audio";
 }
 
 LocalStore::LocalStore(std::filesystem::path dataDirectory,
@@ -221,7 +198,8 @@ LocalStore::LocalStore(std::filesystem::path dataDirectory,
       const auto name = file.path().filename().string();
       if (!name.starts_with("audio-") || indexed.contains(name))
         continue;
-      if (auto exclusive = lockFile(file.path(), LOCK_EX)) {
+      if (auto exclusive =
+              lockFile(file.path(), platform::FileLockMode::Exclusive)) {
         std::error_code error;
         std::filesystem::remove(file.path(), error);
       }
@@ -401,7 +379,9 @@ std::optional<CachedAudio> LocalStore::findAudio(const std::string &source) {
     title = query.Text(3);
   }
   const auto path = cachePath(filename);
-  auto lease = path.empty() ? nullptr : lockFile(path, LOCK_SH);
+  auto lease = path.empty()
+                   ? nullptr
+                   : lockFile(path, platform::FileLockMode::Shared);
   std::error_code error;
   if (!lease || expectedSize <= 0 ||
       std::filesystem::file_size(path, error) !=
@@ -776,7 +756,9 @@ bool LocalStore::trimCache(std::uint64_t target) {
     const bool exists = !path.empty() && std::filesystem::exists(path, error);
     if (error || (exists && total <= target))
       continue;
-    auto exclusive = exists ? lockFile(path, LOCK_EX) : nullptr;
+    auto exclusive = exists
+                         ? lockFile(path, platform::FileLockMode::Exclusive)
+                         : nullptr;
     if (exists && !exclusive)
       continue;
     if (exists && !std::filesystem::remove(path, error))
@@ -823,7 +805,7 @@ LocalStore::StoreAudio(const std::string &source,
   if (!stale.empty()) {
     const auto path = cachePath(stale);
     if (!path.empty() && std::filesystem::exists(path)) {
-      auto exclusive = lockFile(path, LOCK_EX);
+      auto exclusive = lockFile(path, platform::FileLockMode::Exclusive);
       if (!exclusive) {
         transaction.Commit();
         return std::nullopt;
@@ -839,16 +821,9 @@ LocalStore::StoreAudio(const std::string &source,
     transaction.Commit();
     return std::nullopt;
   }
-  std::string pattern = (_cacheDirectory / "audio-XXXXXX").string();
-  const int descriptor = mkstemp(pattern.data());
-  if (descriptor < 0)
-    throw std::runtime_error("Could not create an audio cache file");
-  auto lease = std::make_shared<CacheLease>(descriptor);
-  fcntl(descriptor, F_SETFD, FD_CLOEXEC);
-  if (flock(descriptor, LOCK_SH) != 0) {
-    std::filesystem::remove(pattern);
-    throw std::runtime_error("Could not lock an audio cache file");
-  }
+  auto lockedFile = platform::CurrentPlatform().Files().CreateLockedFile(
+      _cacheDirectory, "audio");
+  const auto &pattern = lockedFile.path;
   try {
     std::filesystem::copy_file(
         file, pattern, std::filesystem::copy_options::overwrite_existing);
@@ -871,7 +846,7 @@ LocalStore::StoreAudio(const std::string &source,
     return CachedAudio{pattern,
                        canonicalSource.empty() ? source : canonicalSource,
                        title,
-                       std::move(lease)};
+                       std::move(lockedFile.lease)};
   } catch (...) {
     std::error_code error;
     std::filesystem::remove(pattern, error);

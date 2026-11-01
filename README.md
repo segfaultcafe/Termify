@@ -354,10 +354,15 @@ components.
 
 ## Platform status
 
-Termify currently supports Linux. Windows support is planned around a
-cross-platform audio backend and platform-specific terminal and process
-adapters; the decoder, queue, metadata, progress, and playback state are
-already portable.
+Termify currently supports Linux. The v0.7.0 milestone ports Termify to macOS
+with a native audio backend, platform-specific terminal and process handling,
+verified bundled yt-dlp builds, and Apple Silicon and Intel CI coverage.
+Windows remains a post-1.0 target. The decoder, queue, metadata, progress, and
+playback state are already portable.
+
+OS integrations are composed from narrow process, filesystem, terminal, and
+audio interfaces. See [docs/PLATFORM.md](docs/PLATFORM.md) for the boundary and
+porting contract.
 
 The supported-release goals and milestones are tracked in
 [ROADMAP.md](ROADMAP.md).

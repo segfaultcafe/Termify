@@ -3,6 +3,7 @@
 
 #include "Common.hpp"
 #include "Defines.hpp"
+#include "../Platform/Services.hpp"
 
 namespace termify::core {
 
@@ -16,14 +17,13 @@ private:
   int init(const string &source, AVCodecContext **ppCodecCtx);
   void publishStreamInfo(const string &displayName, int streamIndex);
   void resampleStereo(AVCodecContext *codecCtx);
-  void openAlsa(snd_pcm_t **ppPcm);
   void decodeResample(AVCodecContext *codecCtx, AVPacket *pkt, AVFrame *frame,
                       int streamIndex, uint64 bufCapacity, uint8_t *outBuf,
                       const std::atomic_bool *outputFinished);
   bool applyPendingSeek(AVCodecContext *codecCtx, int streamIndex,
                         AVPacket *packet, AVFrame *frame);
 
-  void worker(snd_pcm_t **ppPcm);
+  void worker(platform::AudioOutput &output);
 
 private:
   AtomicContext &_ctx;

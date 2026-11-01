@@ -2,7 +2,6 @@
 #define _TERMIFY_CORE_DEFINES_HPP
 
 #include <algorithm>
-#include <alsa/asoundlib.h>
 #include <array>
 #include <atomic>
 #include <condition_variable>

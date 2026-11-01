@@ -13,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+#include "../Platform/Services.hpp"
+
 struct sqlite3;
 
 namespace termify::core {
@@ -49,15 +51,9 @@ enum class AddTrackResult {
   PlaylistFull,
 };
 
-// Shared by the queue and decoder. An advisory lock prevents eviction while
+// Shared by the queue and decoder. The platform lease prevents eviction while
 // any Termify process still has this cached file queued or playing.
-struct CacheLease {
-  explicit CacheLease(int descriptor) : fd(descriptor) {}
-  ~CacheLease();
-  CacheLease(const CacheLease &) = delete;
-  CacheLease &operator=(const CacheLease &) = delete;
-  int fd;
-};
+using CacheLease = platform::FileLease;
 
 struct CachedAudio {
   std::string path;

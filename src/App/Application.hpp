@@ -47,8 +47,8 @@ private:
   std::optional<core::Playlist> selectedPlaylist();
   string buildWaveform(std::size_t width);
   static string formatDuration(uint64 frames);
-  static int terminalWidth();
-  static int terminalHeight();
+  int terminalWidth() const;
+  int terminalHeight() const;
 
   core::PlaybackContext _playbackCtx;
   core::RingBufferContext _ringBufferCtx;
