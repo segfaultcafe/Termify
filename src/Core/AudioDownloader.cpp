@@ -114,7 +114,11 @@ PreparedAudio YtDlpManager::PrepareAudio(const string &query,
   std::error_code pathError;
   if (std::filesystem::is_regular_file(query, pathError)) {
     const auto path = std::filesystem::absolute(query).string();
-    return {.path = path, .source = path, .temporary = false, .cacheLease = {}};
+    return {.path = path,
+            .source = path,
+            .title = std::filesystem::path(path).stem().string(),
+            .temporary = false,
+            .cacheLease = {}};
   }
   if (std::filesystem::path(query).is_absolute())
     throw std::runtime_error("Local audio file is missing or unreadable: " +
@@ -133,7 +137,11 @@ PreparedAudio YtDlpManager::PrepareAudio(const string &query,
             // ineligible for playlists until their URL can be resolved.
           }
         }
-        return {cached->path, cached->source, false, std::move(cached->lease)};
+        const auto storedTitle = cached->title.empty()
+                                     ? store->TrackTitle(cached->source)
+                                     : std::optional<string>(cached->title);
+        return {cached->path, cached->source, storedTitle.value_or(""), false,
+                std::move(cached->lease)};
       }
     } catch (const std::exception &) { /* Playback survives cache failures. */
     }
@@ -142,16 +150,18 @@ PreparedAudio YtDlpManager::PrepareAudio(const string &query,
   if (store) {
     try {
       if (auto cached =
-              store->StoreAudio(query, downloaded.path, downloaded.source)) {
+              store->StoreAudio(query, downloaded.path, downloaded.source,
+                                downloaded.title)) {
         std::error_code error;
         std::filesystem::remove(downloaded.path, error);
-        return {cached->path, cached->source, false, std::move(cached->lease)};
+        return {cached->path, cached->source, downloaded.title, false,
+                std::move(cached->lease)};
       }
     } catch (
         const std::exception &) { /* Keep the temporary download playable. */
     }
   }
-  return {downloaded.path, downloaded.source, true, {}};
+  return {downloaded.path, downloaded.source, downloaded.title, true, {}};
 }
 
 string YtDlpManager::DownloadAudioToFile(const string &query,
@@ -346,9 +356,11 @@ YtDlpManager::download(const string &query, const atomic_bool *cancel) {
       close(errorLog);
     }
 
+    const string metadataFormat =
+        "after_move:%(webpage_url)s\x1f%(title)s";
     execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(), "--quiet",
           "--no-warnings", "--no-playlist", "--extract-audio", "--audio-format",
-          "mp3", "--embed-metadata", "--print", "after_move:%(webpage_url)s",
+          "mp3", "--embed-metadata", "--print", metadataFormat.c_str(),
           "-o", outputTemplate.c_str(), source.c_str(),
           static_cast<char *>(nullptr));
     _exit(127);
@@ -389,9 +401,15 @@ YtDlpManager::download(const string &query, const atomic_bool *cancel) {
   std::error_code error;
   std::filesystem::remove(errorPath, error);
   string canonicalSource;
+  string title;
   {
     std::ifstream sourceStream(sourcePath);
-    std::getline(sourceStream, canonicalSource);
+    string metadata;
+    std::getline(sourceStream, metadata);
+    const auto separator = metadata.find('\x1f');
+    canonicalSource = metadata.substr(0, separator);
+    if (separator != string::npos)
+      title = cleanField(metadata.substr(separator + 1));
   }
   std::filesystem::remove(sourcePath, error);
   canonicalSource.erase(
@@ -403,7 +421,7 @@ YtDlpManager::download(const string &query, const atomic_bool *cancel) {
   if (!canonicalSource.starts_with("https://") &&
       !canonicalSource.starts_with("http://"))
     canonicalSource = query;
-  return {output, canonicalSource};
+  return {output, canonicalSource, std::move(title)};
 }
 
 string YtDlpManager::resolveSource(const string &query,

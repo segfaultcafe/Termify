@@ -141,6 +141,25 @@ int main() {
   CHECK(controlsRendered.str().find("[ >| NEXT ]") != std::string::npos);
   CHECK(controlsRendered.str().find("[ [] STOP ]") != std::string::npos);
   CHECK(controlsRendered.str().find("[ VOL (◝) 45% ]") != std::string::npos);
+  auto &progress = controls.Emplace<ProgressBar>("progress");
+  progress.SetBounds({0, 2, 40, 1});
+  progress.SetLabels("1:00", "4:00");
+  CHECK(controls.Dispatch(
+      MouseEvent{MouseButton::Left, MouseAction::Press, 6, 2, {}}));
+  CHECK(progress.TakeSeekFraction() == 0.0);
+  CHECK(controls.Dispatch(
+      MouseEvent{MouseButton::Left, MouseAction::Move, 33, 2, {}}));
+  CHECK(progress.TakeSeekFraction() == 1.0);
+  CHECK(controls.Dispatch(
+      MouseEvent{MouseButton::Left, MouseAction::Release, 20, 2, {}}));
+  const auto middleSeek = progress.TakeSeekFraction();
+  CHECK(middleSeek && *middleSeek > 0.4 && *middleSeek < 0.6);
+  CHECK(controls.Dispatch(
+      MouseEvent{MouseButton::WheelUp, MouseAction::Scroll, 20, 2, {}}));
+  CHECK(progress.TakeSeekAdjustment() == 5);
+  CHECK(controls.Dispatch(
+      MouseEvent{MouseButton::WheelDown, MouseAction::Scroll, 20, 2, {}}));
+  CHECK(progress.TakeSeekAdjustment() == -5);
   playPause.SetLabel("|| PAUSE");
   Canvas pausedControlsCanvas(38, 1);
   controls.Render(pausedControlsCanvas);

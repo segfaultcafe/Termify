@@ -64,6 +64,9 @@ struct CachedAudio {
   // The canonical media URL reported by yt-dlp. Old cache rows fall back to
   // the original query so upgrades remain playable.
   std::string source;
+  // Provider metadata saved with the cached audio. Empty on legacy rows until
+  // the track is resolved or played again.
+  std::string title;
   std::shared_ptr<CacheLease> lease;
 };
 
@@ -89,7 +92,8 @@ public:
   std::optional<CachedAudio> FindAudio(const std::string &source);
   std::optional<CachedAudio>
   StoreAudio(const std::string &source, const std::filesystem::path &file,
-             const std::string &canonicalSource = {});
+             const std::string &canonicalSource = {},
+             const std::string &title = {});
   bool UpdateCachedSource(const std::string &source,
                           const std::string &canonicalSource);
   static std::string SourceHash(const std::string &source);
@@ -110,6 +114,9 @@ public:
   bool RemovePlaylistTrack(std::int64_t playlistId, std::int64_t entryId);
   bool MovePlaylistTrack(std::int64_t playlistId, std::int64_t entryId,
                          int direction);
+  std::optional<std::string> TrackTitle(const std::string &source);
+  std::optional<int> SavedVolume();
+  void SaveVolume(int volume);
   std::uint64_t Revision() const { return _revision.load(); }
 
 private:

@@ -18,7 +18,10 @@ private:
   void resampleStereo(AVCodecContext *codecCtx);
   void openAlsa(snd_pcm_t **ppPcm);
   void decodeResample(AVCodecContext *codecCtx, AVPacket *pkt, AVFrame *frame,
-                      int streamIndex, uint64 bufCapacity, uint8_t *outBuf);
+                      int streamIndex, uint64 bufCapacity, uint8_t *outBuf,
+                      const std::atomic_bool *outputFinished);
+  bool applyPendingSeek(AVCodecContext *codecCtx, int streamIndex,
+                        AVPacket *packet, AVFrame *frame);
 
   void worker(snd_pcm_t **ppPcm);
 

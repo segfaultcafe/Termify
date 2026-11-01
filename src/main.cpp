@@ -16,7 +16,8 @@ void printHelp() {
       << "  -V, --version    Show the version and exit\n\n"
       << "Interactive commands:\n"
       << "  play <song|URL|file>  pause  resume  next  repeat\n"
-      << "  volume <0-100|+N|-N>  history  playlists  player\n"
+      << "  volume <0-100|+N|-N>  seek <seconds|M:SS>\n"
+      << "  history  playlists  search  player\n"
       << "  queue  clear  stop  help  exit\n";
 }
 } // namespace

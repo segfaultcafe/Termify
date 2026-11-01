@@ -23,6 +23,8 @@
   controls
 - Clickable playback controls, a track-repeat toggle, and a mouse-wheel
   volume dial
+- Mouse seeking by clicking or dragging the progress bar, plus precise CLI
+  seeking while playing or paused
 - Persistent playlists built from previously heard cached tracks or verified
   YouTube Search results
 - Local play history and a bounded audio cache for replaying downloaded tracks
@@ -35,6 +37,10 @@
 cached results and playlist actions, and symmetric Play Now and Play Next
 controls in History. Mouse-driven playback remains fully compatible with the
 command prompt.
+
+The **v0.5.0** release candidate adds progress-bar and CLI seeking, remembers
+volume between sessions, shows resolved song titles in **UP NEXT**, and keeps a
+looping playlist's queue visibly continuous between cycles.
 
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
@@ -145,6 +151,8 @@ Then enter commands at the `termify ›` prompt:
 | `play <name, URL, or file>` | Play if idle, otherwise queue the track next |
 | `pause` / `resume` | Pause or resume the current track |
 | `next` | Skip to the next queued track |
+| `seek 1:30` | Seek to an absolute position (`SS`, `MM:SS`, or `HH:MM:SS`) |
+| `seek +10` / `seek -0:30` | Seek forward or backward relative to the current position |
 | `repeat` | Toggle repeating the current track |
 | `volume 60` | Set volume from 0 to 100 percent |
 | `volume +10` / `volume -10` | Adjust volume relative to its current level |
@@ -165,6 +173,8 @@ play daft punk veridis quo
 play https://www.youtube.com/watch?v=...
 play /home/me/Music/song.flac
 volume 65
+seek 1:30
+seek -15
 next
 ```
 
@@ -177,14 +187,19 @@ next
   for adding new songs.
 - The Player summary has a rotating **VOL** dial. Hover it and use the mouse
   wheel in 5% steps, or focus it with Tab and use the arrow keys. The adjacent
-  **REPEAT ON/OFF** button toggles repeating only the current track.
+  **REPEAT ON/OFF** button toggles repeating only the current track. The last
+  volume setting is restored the next time Termify starts.
+- Click or drag anywhere on the playback progress bar to seek. Hover the bar
+  and use the mouse wheel to move backward or forward in five-second steps.
+  Seeking also works while paused. Termify clamps requests at the beginning
+  and end of the track; no new keyboard shortcut is assigned.
 - The bordered file-style tabs sit above the player. A cyan dot marks the
   active view; hovering highlights a tab without taking focus from your typing.
 - The **QUIT** button in the player frame's title bar stops playback, clears
   pending work, and closes Termify through the same clean shutdown path as the
   `quit` command.
 - The frame title shows the build version, for example
-  `TERMIFY - terminal audio player - v0.4.0`.
+  `TERMIFY - terminal audio player - v0.5.0`.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
 - **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
   bar is focused; **Esc** returns to the command prompt.
@@ -231,7 +246,8 @@ next
 Termify keeps the latest **1,000 plays** in an embedded SQLite database. A play
 is recorded when audio first reaches the output device, not when a download
 starts. Repeated plays are separate entries, newest first. History survives
-restarts; queued tracks and playback position do not yet persist.
+restarts. Volume also survives restarts; queued tracks and playback position
+do not yet persist.
 
 Online tracks are prefetched and kept in a **256 MiB** disk cache. Reusing the
 same search text or URL—including replaying a history entry—avoids another
@@ -241,6 +257,10 @@ keys. Least-recently-used files are evicted first, but queued or playing files
 are protected. Oversized tracks or a cache full of protected files use temporary
 downloads, removed after use. Local files are played in place, never copied or
 deleted by the cache.
+
+The **UP NEXT** list prefers the song title carried by Search, History, a
+playlist, or downloaded provider metadata. It falls back to the canonical URL
+only when no title can be resolved; local files fall back to their filename.
 
 Default storage locations:
 
@@ -265,7 +285,12 @@ truth and never copies audio into a playlist.
 
 **SHUFFLE** randomizes the order each time the playlist starts and for every
 new loop. **LOOP** repeats the whole playlist independently of the `repeat`
-command for one track. Starting a playlist disables single-track repeat.
+command for one track. Its queue is displayed as `∞` and keeps the next three
+logical tracks populated across cycle boundaries instead of briefly appearing
+empty. Switching **LOOP** off while that playlist is active immediately removes
+buffered future-cycle entries without interrupting the current track; any
+remaining original-cycle tracks continue normally.
+Starting a playlist disables single-track repeat.
 Tracks added with `play` while a playlist is active are inserted ahead of the
 remaining playlist tracks without ending the playlist session. Multiple manual
 additions retain their enqueue order.

@@ -36,6 +36,15 @@ volume `Knob`. The knob rotates its marker as the value changes, consumes
 mouse-wheel events in 5% steps, and offers arrow-key control when focused. Its
 marker changes on every step so wheel input is immediately visible. Both
 controls call the same mixer methods as the `repeat` and `volume` commands.
+Volume changes are stored through `LocalStore` and restored when the mixer is
+constructed.
+
+The Player `ProgressBar` is pointer-aware without joining keyboard focus. A
+click or drag emits an absolute fraction and a wheel event emits a five-second
+relative adjustment. The application forwards both to the same mixer seek
+boundary used by the `seek` command. Drag updates stay quiet in the status row;
+wheel and CLI requests provide a textual confirmation. No keyboard seek
+shortcut is assigned.
 
 `TabBar` owns selection, arrow-key navigation, and tab hit testing. `ListView`
 owns a scrollable selection, keyboard/mouse navigation, and an activation event
@@ -54,6 +63,15 @@ prompt; it does not add text editing to list widgets. History's add button
 targets the playlist last selected in the Playlists view. Application code
 translates action activations into `LocalStore` operations and refreshes
 widgets from storage revisions.
+
+A looping playlist is logically infinite but remains physically bounded. The
+mixer replenishes a three-track tail as playlist entries are consumed, while
+the summary displays `QUEUE ∞`. Manual Play Next requests retain priority; if
+the bounded queue is full, its final playlist entry is deferred and restored
+to the tail instead of rejecting the manual track or losing playlist order.
+Loop-generated entries carry a distinct queue origin, allowing the live LOOP
+toggle to remove future-cycle entries without touching the current cycle or
+manual requests.
 
 The Search view owns a second `TextInput` dedicated to YouTube queries; the
 shared command prompt remains visible and continues to accept fine-grained
@@ -131,6 +149,13 @@ state, updates widget view data, renders a fresh canvas, and presents it. The
 widget mutex protects interactive widget state such as focus and text input
 from the input loop.
 
+A seek request is stored atomically in output-frame units. The decoder wakes
+even when the ring buffer is full, seeks and flushes FFmpeg state, clears stale
+decoded frames, and increments a generation counter. The ALSA worker observes
+that generation, drops already-buffered device audio, prepares the device, and
+discards any chunk from the previous generation. This keeps seeking responsive
+while playing or paused without racing the decoder and output threads.
+
 Canvas clipping is mandatory: a widget must remain safe when its assigned area
 is smaller than its preferred content. The current canvas treats each Unicode
 code point as one terminal cell; full grapheme and wide-character measurement
@@ -139,7 +164,10 @@ is a future improvement.
 ## Persistent library boundary
 
 `LocalStore` owns an embedded SQLite connection, versioned schema, bounded play
-history, playlists, and the disk-cache index. Playlist entries reference a
+history, playlists, the disk-cache index, and persisted settings. Schema v3
+stores the clamped output volume and verified provider titles with cached audio;
+missing settings retain the normal default.
+Playlist entries reference a
 SHA-256 of the canonical media URL and keep metadata in a normalized library
 table; they never own or delete cache files. The audio output thread enqueues a
 history record after its first successful write; a separate writer performs
@@ -158,3 +186,7 @@ YouTube metadata search uses a separate yt-dlp `--flat-playlist` operation. Its
 after 30 minutes. Search results may be persisted to playlists because their
 canonical URL and metadata come from the provider; arbitrary CLI query text
 still must be played, cached, and recorded in History before it is eligible.
+Queue entries carry this verified title metadata through prefetch and playback.
+When a raw URL or query is resolved, downloader metadata enriches the queued
+entry; **UP NEXT** uses the title and falls back to the canonical URL only when
+metadata remains unavailable. Local files use their filename stem.

@@ -35,7 +35,8 @@ terminal or system in a broken state.
 ### Daily usability
 
 - Keep queue prefetching bounded and avoid duplicate downloads.
-- Add seeking and documented keyboard shortcuts.
+- Provide mouse and command-line seeking without adding new keyboard
+  shortcuts.
 - Persist volume, configuration, history, and the upcoming queue.
 - Support playlists and favorites.
 - Keep the interface usable after terminal resizing and in small terminals.
@@ -68,8 +69,10 @@ terminal or system in a broken state.
   controls, plus a keyboard- and mouse-navigable YouTube search-results tab
   with Play Now, Play Next, and playlist-picker actions. Ten-result searches
   use a bounded 30-minute session cache while retaining CLI queueing.
-- **v0.5 — Daily usability:** add seeking, shortcuts, persistent settings,
-  favorites, and playlist import/export.
+- **v0.5 — Daily usability (release candidate):** mouse and command-line
+  seeking, persistent volume, metadata-rich queue labels, and continuously
+  replenished looping-playlist queues. Favorites and playlist import/export
+  remain future work.
 - **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
   add verified update checks and rollback, and test packages on clean supported
   distributions.
@@ -105,9 +108,10 @@ foundations:
 Still next:
 
 - Add favorites and broader playlist import/export workflows.
+- Expand persistence beyond volume to configuration and the upcoming queue.
 - Define explicit history/cache management controls and safe schema migrations
-  before adding more persistent library data. Playlist schema v2 establishes
-  the migration pattern; user-facing management controls remain.
+  before adding more persistent library data. Schema v3 adds settings-backed
+  volume persistence; user-facing management controls remain.
 
 ## Not required for v1
 
