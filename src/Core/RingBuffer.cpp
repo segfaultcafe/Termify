@@ -1,20 +1,18 @@
 #include "RingBuffer.hpp"
 #include "Common.hpp"
 #include <algorithm>
-#include <mutex>
+#include <cstring>
 #include <ctime>
+#include <mutex>
 
 namespace termify::core {
 
-void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
+void RingBuffer::Update(AtomicContext &ctx, platform::AudioOutput &output) {
   auto &ringBufferCtx = ctx.ringBufferCtx;
   auto &playbackCtx = ctx.playbackCtx;
   auto &visualCtx = ctx.visualizationCtx;
   uint64 observedSeek = playbackCtx->seekGeneration.load();
-  const auto resetDevice = [&] {
-    snd_pcm_drop(*ppPcm);
-    snd_pcm_prepare(*ppPcm);
-  };
+  const auto resetDevice = [&] { output.Reset(); };
   while (!ringBufferCtx->decodeFinished.load() ||
          ringBufferCtx->readIndex.load() != ringBufferCtx->writeIndex.load()) {
     if (playbackCtx->shouldStop.load())
@@ -104,31 +102,27 @@ void RingBuffer::Update(AtomicContext &ctx, snd_pcm_t **ppPcm) {
       continue;
     }
 
-    // write to ALSA (retry on XRUN)
+    // The platform backend owns device recovery and buffering details.
     int frames = toRead / ringBufferCtx->CHANNELS, off = 0;
     while (frames > 0) {
       if (playbackCtx->seekGeneration.load() != observedSeek) {
         discardChunk = true;
         break;
       }
-      int w = snd_pcm_writei(
-          *ppPcm, chunk.data() + off * ringBufferCtx->CHANNELS, frames);
-      if (w == -EPIPE) {
-        snd_pcm_prepare(*ppPcm);
-        continue;
-      }
-      if (w < 0) {
-        snd_pcm_prepare(*ppPcm);
+      const auto written = output.WriteFrames(
+          chunk.data() + off * ringBufferCtx->CHANNELS,
+          static_cast<std::size_t>(frames));
+      if (written == 0) {
         break;
       }
       if (playbackCtx->seekGeneration.load() != observedSeek) {
         discardChunk = true;
         break;
       }
-      frames -= w;
-      off += w;
-      playbackCtx->positionFrames.fetch_add(static_cast<uint64>(w));
-      if (w > 0 && ctx.store &&
+      frames -= static_cast<int>(written);
+      off += static_cast<int>(written);
+      playbackCtx->positionFrames.fetch_add(static_cast<uint64>(written));
+      if (ctx.store &&
           !playbackCtx->historyRecorded.exchange(true)) {
         HistoryEntry entry;
         entry.source = ctx.source;

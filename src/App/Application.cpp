@@ -4,7 +4,6 @@
 
 #include <cmath>
 #include <ctime>
-#include <sys/ioctl.h>
 
 namespace termify::app {
 
@@ -1519,20 +1518,8 @@ string Application::buildWaveform(std::size_t width) {
   return output;
 }
 
-int Application::terminalWidth() {
-  winsize size{};
-  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_col > 0) {
-    return size.ws_col;
-  }
-  return 80;
-}
+int Application::terminalWidth() const { return _terminal.Size().columns; }
 
-int Application::terminalHeight() {
-  winsize size{};
-  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_row > 0) {
-    return size.ws_row;
-  }
-  return 24;
-}
+int Application::terminalHeight() const { return _terminal.Size().rows; }
 
 } // namespace termify::app

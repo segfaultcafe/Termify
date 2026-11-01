@@ -2,17 +2,22 @@
 
 ## Version 1 goal
 
-Termify 1.0 will be a polished Linux terminal music player that installs with
-one download, plays local and online audio reliably, and never leaves the
-terminal or system in a broken state.
+Termify 1.0 will be a polished Linux and macOS terminal music player that
+installs with one download, plays local and online audio reliably, and never
+leaves the terminal or system in a broken state.
 
 ## Version 1 release gates
 
 ### Portable distribution
 
-- Provide a self-contained x86_64 AppImage, with ARM64 as the next target.
+- Provide a self-contained x86_64 AppImage, with Linux ARM64 as the next
+  target.
+- Provide tested macOS builds for Apple Silicon and Intel Macs with the
+  downloader bundled and verified.
 - Require no Python or separately installed yt-dlp.
 - Support current Ubuntu LTS, Debian stable, Fedora, Arch, and openSUSE.
+- Support maintained macOS releases on Apple Silicon and Intel while the
+  required toolchain and media dependencies remain available.
 - Publish verified checksums and bundled-dependency license information.
 - Add native `.deb`, `.rpm`, and AUR packages where they improve integration.
 
@@ -77,9 +82,14 @@ terminal or system in a broken state.
   play them immediately from the Player, with precise CLI removal and
   reordering that preserves manual-request priority and leaves saved playlists
   untouched.
-- **v0.8 — Distribution:** ship AppImage builds, add ARM64, automate releases,
-  add verified update checks and rollback, and test packages on clean supported
-  distributions.
+- **v0.7.0 — macOS port:** replace the Linux-only audio coupling with a platform
+  audio boundary and a native macOS backend; handle macOS terminal, process,
+  filesystem, and executable-location differences; bundle the correct verified
+  yt-dlp artifact; add Apple Silicon and Intel CI coverage; document macOS
+  dependencies and installation; and preserve all existing Linux behavior.
+- **v0.8 — Distribution:** ship AppImage builds, add Linux ARM64, automate
+  releases, add verified update checks and rollback, and test packages on clean
+  supported distributions.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a
@@ -120,6 +130,6 @@ Still next:
 ## Not required for v1
 
 Windows support, account login, cloud library synchronization, plugins, and a
-graphical interface are intentionally outside the Linux 1.0 scope. Windows is
-the next platform target once audio, terminal, process, and filesystem adapters
-are ready for a native implementation.
+graphical interface are intentionally outside the 1.0 scope. Windows is the
+next platform target after the Linux and macOS adapters are established and
+the supported 1.0 release is complete.

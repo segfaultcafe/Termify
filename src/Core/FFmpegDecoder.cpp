@@ -19,7 +19,7 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
   _ctx.playbackCtx->historyRecorded.store(false);
 
   AVCodecContext *codecCtx = nullptr;
-  snd_pcm_t *pcm = nullptr;
+  std::unique_ptr<platform::AudioOutput> output;
   AVPacket *packet = nullptr;
   AVFrame *frame = nullptr;
   uint8_t *outputBuffer = nullptr;
@@ -36,11 +36,7 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
     swr_free(&_swr);
     avcodec_free_context(&codecCtx);
     avformat_close_input(&_fmtCtx);
-    if (pcm) {
-      snd_pcm_drop(pcm);
-      snd_pcm_close(pcm);
-      pcm = nullptr;
-    }
+    output.reset();
   };
 
   try {
@@ -52,7 +48,8 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
     publishStreamInfo(displayName, streamIndex);
     _ctx.playbackCtx->isLoading.store(false);
     resampleStereo(codecCtx);
-    openAlsa(&pcm);
+    output = platform::CurrentPlatform().CreateAudioOutput(
+        {.sampleRate = 44100, .channels = _ctx.ringBufferCtx->CHANNELS});
 
     packet = av_packet_alloc();
     frame = av_frame_alloc();
@@ -63,7 +60,7 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
     }
 
     consumer = std::thread([&] {
-      worker(&pcm);
+      worker(*output);
       outputFinished.store(true);
       _ctx.ringBufferCtx->ringCv.notify_all();
     });
@@ -162,18 +159,6 @@ void FFmpegDecoder::resampleStereo(AVCodecContext *codecCtx) {
   av_opt_set_int(_swr, "out_sample_rate", 44100, 0);
   if (swr_init(_swr) < 0)
     throw std::runtime_error("Failed to initialize the audio resampler");
-}
-
-void FFmpegDecoder::openAlsa(snd_pcm_t **ppPcm) {
-  int result = snd_pcm_open(ppPcm, "pipewire", SND_PCM_STREAM_PLAYBACK, 0);
-  if (result < 0)
-    result = snd_pcm_open(ppPcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
-  if (result < 0)
-    throw std::runtime_error("No ALSA playback device is available");
-  if (snd_pcm_set_params(*ppPcm, SND_PCM_FORMAT_S16_LE,
-                         SND_PCM_ACCESS_RW_INTERLEAVED,
-                         _ctx.ringBufferCtx->CHANNELS, 44100, 1, 500000) < 0)
-    throw std::runtime_error("ALSA device configuration failed");
 }
 
 void FFmpegDecoder::decodeResample(AVCodecContext *codecCtx, AVPacket *pkt,
@@ -289,6 +274,8 @@ bool FFmpegDecoder::applyPendingSeek(AVCodecContext *codecCtx, int streamIndex,
   return true;
 }
 
-void FFmpegDecoder::worker(snd_pcm_t **ppPcm) { RingBuffer::Update(_ctx, ppPcm); }
+void FFmpegDecoder::worker(platform::AudioOutput &output) {
+  RingBuffer::Update(_ctx, output);
+}
 
 } // namespace termify::core

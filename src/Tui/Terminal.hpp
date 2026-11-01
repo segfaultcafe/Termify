@@ -3,9 +3,10 @@
 
 #include "Event.hpp"
 #include "InputDecoder.hpp"
+#include "../Platform/Services.hpp"
 
+#include <memory>
 #include <optional>
-#include <termios.h>
 
 namespace termify::tui {
 
@@ -21,16 +22,12 @@ public:
   void Leave();
   bool Interactive() const;
   std::optional<Event> ReadEvent();
+  platform::TerminalSize Size() const;
 
 private:
   bool WaitForSequence() const;
 
-  int _inputFd;
-  int _outputFd;
-  bool _interactive{false};
-  bool _active{false};
-  bool _termiosActive{false};
-  termios _originalTermios{};
+  std::unique_ptr<platform::TerminalDriver> _driver;
   InputDecoder _decoder;
 };
 
