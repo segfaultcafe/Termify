@@ -1,8 +1,9 @@
 #include "RingBuffer.hpp"
 #include "Common.hpp"
 #include <algorithm>
-#include <mutex>
+#include <cstring>
 #include <ctime>
+#include <mutex>
 
 namespace termify::core {
 
