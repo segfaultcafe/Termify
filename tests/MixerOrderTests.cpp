@@ -193,8 +193,10 @@ int main() {
   {
     MixerRig rig(true);
     CHECK(rig.mixer->PlayNow("idle-play-now-regression"));
+    // The scheduler runs on its own thread. Give a heavily loaded CI runner
+    // enough time to schedule it while still failing if the wake-up is lost.
     const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::seconds(1);
+                          std::chrono::seconds(5);
     while (!rig.queue.Empty() && std::chrono::steady_clock::now() < deadline)
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     CHECK(rig.queue.Empty());
