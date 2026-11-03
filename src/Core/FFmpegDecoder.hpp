@@ -1,9 +1,9 @@
 #ifndef _TERMIFY_INCLUDE_FFMPEG_DECODER_HPP
 #define _TERMIFY_INCLUDE_FFMPEG_DECODER_HPP
 
+#include "../Platform/Services.hpp"
 #include "Common.hpp"
 #include "Defines.hpp"
-#include "../Platform/Services.hpp"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -19,7 +19,8 @@ class FFmpegDecoder {
 public:
   explicit FFmpegDecoder(AtomicContext &ctx);
 
-  void Stream(const string &source, const string &displayName);
+  void Stream(const string &source, const string &displayName,
+              platform::AudioOutput &output);
 
 private:
   int init(const string &source, AVCodecContext **ppCodecCtx);

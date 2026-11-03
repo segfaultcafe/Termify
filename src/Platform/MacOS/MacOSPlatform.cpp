@@ -142,6 +142,28 @@ public:
     return frames;
   }
 
+  void Drain(const std::atomic_bool *cancel) override {
+    if (!_started)
+      return;
+    check(AudioQueueStop(_queue, false), "Could not drain Core Audio output");
+    while (true) {
+      UInt32 running = 0;
+      UInt32 size = sizeof(running);
+      check(AudioQueueGetProperty(_queue, kAudioQueueProperty_IsRunning,
+                                  &running, &size),
+            "Could not inspect Core Audio output");
+      if (!running)
+        break;
+      if (cancel && cancel->load()) {
+        check(AudioQueueStop(_queue, true), "Could not stop Core Audio output");
+        break;
+      }
+      std::unique_lock lock(_mutex);
+      _available.wait_for(lock, std::chrono::milliseconds(50));
+    }
+    _started = false;
+  }
+
 private:
   struct BufferSlot {
     AudioQueueBufferRef buffer{nullptr};

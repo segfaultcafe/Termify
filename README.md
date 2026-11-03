@@ -51,7 +51,9 @@ existing help row remains uncluttered.
 
 **v0.7.0** adds a `♡ LIKE` / `♥ LIKED` toggle to Player and a permanent
 **Liked Songs** playlist. The playlist can be played and reordered like any
-other playlist, but cannot be renamed or deleted.
+other playlist, but cannot be renamed or deleted. Track repeat now keeps one
+native audio session, drains its final buffered frames, and synchronizes the
+end-of-stream handoff so long-running repeat sessions do not stall at the end.
 
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
