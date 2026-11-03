@@ -43,7 +43,7 @@ leaves the terminal or system in a broken state.
 - Provide mouse and command-line seeking without adding new keyboard
   shortcuts.
 - Persist volume, configuration, history, and the upcoming queue.
-- Support playlists and favorites.
+- Support playlists and a permanent Liked Songs collection.
 - Keep the interface usable after terminal resizing and in small terminals.
 - Provide complete command help, a man page, and useful diagnostics.
 
@@ -82,7 +82,8 @@ leaves the terminal or system in a broken state.
   play them immediately from the Player, with precise CLI removal and
   reordering that preserves manual-request priority and leaves saved playlists
   untouched.
-- **v0.7.0 — macOS port:** replace the Linux-only audio coupling with a platform
+- **v0.7.0 — macOS port and liked songs:** add a persistent Liked Songs playlist
+  and Player heart toggle; replace the Linux-only audio coupling with a platform
   audio boundary and a native macOS backend; handle macOS terminal, process,
   filesystem, and executable-location differences; bundle the correct verified
   yt-dlp artifact; add Apple Silicon and Intel CI coverage; document macOS

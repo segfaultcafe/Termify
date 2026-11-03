@@ -1,5 +1,6 @@
 #include "Core/LocalStore.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <sqlite3.h>
@@ -113,6 +114,13 @@ int main() {
   const auto playlistCache = root / "playlist-cache";
   {
     LocalStore store(playlistData, playlistCache, 1000);
+    const auto initialPlaylists = store.Playlists();
+    CHECK(initialPlaylists.size() == 1);
+    const auto likedPlaylist = initialPlaylists.front();
+    CHECK(likedPlaylist.name == "Liked Songs" && likedPlaylist.fixed &&
+          likedPlaylist.trackCount == 0);
+    CHECK(!store.RenamePlaylist(likedPlaylist.id, "Favorites"));
+    CHECK(!store.DeletePlaylist(likedPlaylist.id));
     store.Record({0,
                   "search words",
                   "First title",
@@ -138,6 +146,46 @@ int main() {
     CHECK(second);
     const auto history = store.History();
     CHECK(history.size() == 2 && history[0].cached && history[1].cached);
+    const std::string firstSource = "https://www.youtube.com/watch?v=first";
+    CHECK(!store.IsLiked(firstSource));
+    CHECK(store.Like({0,
+                      firstSource,
+                      "First title",
+                      "First artist",
+                      {},
+                      180,
+                      0,
+                      false}) == AddTrackResult::Added);
+    CHECK(store.IsLiked(firstSource));
+    CHECK(store.Like({0,
+                      firstSource,
+                      "First title",
+                      "First artist",
+                      {},
+                      180,
+                      0,
+                      false}) == AddTrackResult::Duplicate);
+    const std::string secondSource =
+        "https://www.youtube.com/watch?v=second";
+    CHECK(store.Like({0, secondSource, "Second title", {}, {}, 200, 0,
+                      false}) == AddTrackResult::Added);
+    CHECK(store.Unlike(firstSource));
+    CHECK(!store.IsLiked(firstSource));
+    CHECK(!store.Unlike(firstSource));
+    CHECK(store.IsLiked(secondSource));
+    const auto remainingLiked = store.PlaylistTracks(likedPlaylist.id);
+    CHECK(remainingLiked.size() == 1 &&
+          remainingLiked[0].source == secondSource &&
+          remainingLiked[0].position == 0);
+    CHECK(store.Unlike(secondSource));
+    CHECK(store.Like({0,
+                      firstSource,
+                      "First title",
+                      "First artist",
+                      {},
+                      180,
+                      0,
+                      false}) == AddTrackResult::Added);
 
     const auto playlist = store.CreatePlaylist("Road trip");
     const auto searchPlaylist = store.CreatePlaylist("Search picks");
@@ -172,21 +220,35 @@ int main() {
     CHECK(store.SetPlaylistLoop(playlist, true));
     CHECK(store.RenamePlaylist(playlist, "Night drive"));
     const auto playlists = store.Playlists();
-    CHECK(playlists.size() == 1 && playlists[0].name == "Night drive");
-    CHECK(playlists[0].shuffle && playlists[0].loop &&
-          playlists[0].trackCount == 2);
+    CHECK(playlists.size() == 2 && playlists[0].fixed &&
+          playlists[0].name == "Liked Songs" && playlists[0].trackCount == 1);
+    const auto nightDrive =
+        std::find_if(playlists.begin(), playlists.end(), [](const auto &item) {
+          return item.name == "Night drive";
+        });
+    CHECK(nightDrive != playlists.end());
+    CHECK(nightDrive->shuffle && nightDrive->loop &&
+          nightDrive->trackCount == 2);
     CHECK(store.RemovePlaylistTrack(playlist, tracks[0].id));
     CHECK(store.PlaylistTracks(playlist).size() == 1);
   }
   {
     LocalStore reopened(playlistData, playlistCache, 1000);
     const auto playlists = reopened.Playlists();
-    CHECK(playlists.size() == 1 && playlists[0].trackCount == 1);
+    CHECK(playlists.size() == 2 && playlists[0].fixed &&
+          playlists[0].trackCount == 1);
+    CHECK(reopened.IsLiked("https://www.youtube.com/watch?v=first"));
+    const auto nightDrive =
+        std::find_if(playlists.begin(), playlists.end(), [](const auto &item) {
+          return item.name == "Night drive";
+        });
+    CHECK(nightDrive != playlists.end() && nightDrive->trackCount == 1);
     const auto cached =
         reopened.FindAudio("https://www.youtube.com/watch?v=first");
     CHECK(cached && cached->source == "https://www.youtube.com/watch?v=first");
-    CHECK(reopened.DeletePlaylist(playlists[0].id));
-    CHECK(reopened.Playlists().empty());
+    CHECK(reopened.DeletePlaylist(nightDrive->id));
+    CHECK(reopened.Playlists().size() == 1);
+    CHECK(!reopened.DeletePlaylist(playlists[0].id));
     CHECK(reopened.FindAudio("https://www.youtube.com/watch?v=first"));
   }
   const auto migrationData = root / "migration-data";
@@ -206,17 +268,34 @@ int main() {
   sqlite3_close(migrationDatabase);
   {
     LocalStore migrated(migrationData, root / "migration-cache", 1000);
-    CHECK(migrated.Playlists().empty());
+    const auto playlists = migrated.Playlists();
+    CHECK(playlists.size() == 1 && playlists[0].fixed &&
+          playlists[0].name == "Liked Songs");
     auto cached = migrated.StoreAudio(
         "old query", audio, "https://www.youtube.com/watch?v=migrated");
     CHECK(cached &&
           cached->source == "https://www.youtube.com/watch?v=migrated");
   }
+  const auto unlimitedData = root / "unlimited-liked-data";
+  {
+    LocalStore store(unlimitedData, root / "unlimited-liked-cache", 1000);
+    const auto playlists = store.Playlists();
+    CHECK(playlists.size() == 1 && playlists[0].fixed);
+    for (int i = 0; i <= LocalStore::PLAYLIST_TRACK_LIMIT; ++i) {
+      const auto source = "https://example.com/liked/" + std::to_string(i);
+      CHECK(store.AddVerifiedSourceToPlaylist(
+                playlists[0].id,
+                {0, source, "Liked track", {}, {}, 1, 0, false}) ==
+            AddTrackResult::Added);
+    }
+    CHECK(store.PlaylistTracks(playlists[0].id).size() ==
+          static_cast<std::size_t>(LocalStore::PLAYLIST_TRACK_LIMIT + 1));
+  }
   // Refuse unknown schema versions rather than downgrading or deleting data.
   sqlite3 *database = nullptr;
   CHECK(sqlite3_open((data / "library.sqlite3").c_str(), &database) ==
         SQLITE_OK);
-  CHECK(sqlite3_exec(database, "PRAGMA user_version=4", nullptr, nullptr,
+  CHECK(sqlite3_exec(database, "PRAGMA user_version=5", nullptr, nullptr,
                      nullptr) == SQLITE_OK);
   sqlite3_close(database);
   bool rejected = false;

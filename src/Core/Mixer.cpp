@@ -98,10 +98,6 @@ bool Mixer::StartPlaylist(vector<TrackRequest> songs, string name, bool shuffle,
     dispatchResponse("This playlist has no tracks.", true);
     return false;
   }
-  if (songs.size() > SongQueue::MAX_SONGS) {
-    dispatchResponse("A playlist can contain at most 20 tracks.", true);
-    return false;
-  }
   _repeatSong.store(false);
   Stop(true, true);
   {
@@ -351,11 +347,18 @@ bool Mixer::queuePlaylistCycle() {
     std::mt19937 generator(device());
     std::shuffle(songs.begin(), songs.end(), generator);
   }
-  if (!_ctx.trackQueue->PushPlaylistCycle(std::move(songs))) {
+  vector<TrackRequest> initial;
+  const auto initialSize = std::min(songs.size(), SongQueue::MAX_SONGS);
+  initial.reserve(initialSize);
+  for (std::size_t index = 0; index < initialSize; ++index)
+    initial.push_back(std::move(songs[index]));
+  if (!_ctx.trackQueue->PushPlaylistCycle(std::move(initial))) {
     return false;
   }
   {
     std::lock_guard playlistLock(_playlistMtx);
+    for (std::size_t index = initialSize; index < songs.size(); ++index)
+      _playlistDeferred.push_back({std::move(songs[index]), false});
     _playlistAppendOrder.clear();
     _playlistAppendIndex = 0;
   }

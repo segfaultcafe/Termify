@@ -31,6 +31,7 @@ struct Playlist {
   std::string name;
   bool shuffle{false};
   bool loop{false};
+  bool fixed{false};
   std::size_t trackCount{0};
 };
 
@@ -101,6 +102,9 @@ public:
   bool DeletePlaylist(std::int64_t playlistId);
   bool SetPlaylistShuffle(std::int64_t playlistId, bool enabled);
   bool SetPlaylistLoop(std::int64_t playlistId, bool enabled);
+  bool IsLiked(const std::string &source);
+  AddTrackResult Like(const HistoryEntry &track);
+  bool Unlike(const std::string &source);
   AddTrackResult AddHistoryToPlaylist(std::int64_t playlistId,
                                       std::int64_t historyId);
   AddTrackResult AddSourceToPlaylist(std::int64_t playlistId,
@@ -116,6 +120,7 @@ public:
   std::uint64_t Revision() const { return _revision.load(); }
 
 private:
+  std::int64_t likedPlaylistId();
   std::optional<CachedAudio> findAudio(const std::string &source);
   bool trimCache(std::uint64_t target);
   std::filesystem::path cachePath(const std::string &filename) const;

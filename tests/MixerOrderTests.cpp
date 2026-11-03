@@ -139,6 +139,21 @@ int main() {
 
   {
     MixerRig rig;
+    vector<TrackRequest> songs;
+    for (int index = 0; index < 23; ++index)
+      songs.emplace_back("large-playlist-" + std::to_string(index));
+    CHECK(rig.mixer->StartPlaylist(std::move(songs), "Large", false, false));
+    CHECK(rig.queue.Size() == SongQueue::MAX_SONGS);
+    for (int index = 0; index < 23; ++index) {
+      rig.mixer->UpcomingTracks(3);
+      const auto next = rig.queue.PopForPlayback();
+      CHECK(next && next->query == "large-playlist-" + std::to_string(index));
+    }
+    CHECK(rig.mixer->UpcomingTracks(3).empty());
+  }
+
+  {
+    MixerRig rig;
     CHECK(rig.mixer->StartPlaylist({{"song-a"}, {"song-b"}, {"song-c"}},
                                    "Editable", false, false));
     CHECK(rig.mixer->AddToQueue("manual-next"));

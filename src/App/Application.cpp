@@ -141,6 +141,7 @@ Application::Application() {
       &_widgets.Emplace<tui::Button>("player-play-pause", "|> PLAY");
   _playerNext = &_widgets.Emplace<tui::Button>("player-next", ">| NEXT");
   _playerStop = &_widgets.Emplace<tui::Button>("player-stop", "[] STOP");
+  _playerLike = &_widgets.Emplace<tui::Button>("player-like", "♡ LIKE");
   _playerRepeat =
       &_widgets.Emplace<tui::Button>("player-repeat", "↻ REPEAT OFF");
   _playerVolume = &_widgets.Emplace<tui::Knob>("player-volume");
@@ -244,7 +245,7 @@ void Application::runInteractiveInput() {
     bool removeTrack = false, moveUp = false, moveDown = false;
     bool playPlaylist = false, toggleShuffle = false, toggleLoop = false;
     bool togglePlayback = false, nextTrack = false, stopPlayback = false;
-    bool toggleRepeatTrack = false;
+    bool toggleRepeatTrack = false, toggleLike = false;
     bool quitApplication = false;
     int volumeAdjustment = 0;
     int seekAdjustment = 0;
@@ -355,6 +356,7 @@ void Application::runInteractiveInput() {
       togglePlayback = _playerPlayPause->TakeActivation();
       nextTrack = _playerNext->TakeActivation();
       stopPlayback = _playerStop->TakeActivation();
+      toggleLike = _playerLike->TakeActivation();
       openPlayerPicker = _playerAddPlaylist->TakeActivation();
       toggleRepeatTrack = _playerRepeat->TakeActivation();
       volumeAdjustment = _playerVolume->TakeAdjustment();
@@ -437,6 +439,8 @@ void Application::runInteractiveInput() {
       _mixer->NextSong();
     if (stopPlayback)
       _mixer->Stop(false, true);
+    if (toggleLike)
+      toggleCurrentLike();
     if (toggleRepeatTrack)
       _mixer->ToggleRepeat(!_mixer->IsRepeatOn());
     if (volumeAdjustment)
@@ -558,6 +562,7 @@ void Application::configureWidgets(int width) {
   controlColumn += controlWidth + controlGap;
   _playerStop->SetBounds({controlColumn, 5, controlWidth, 1});
   _queueRule->SetBounds({0, 9, width, 1});
+  _playerLike->SetBounds({width - 35, 9, 12, 1});
   _playerAddPlaylist->SetBounds({width - 22, 9, 19, 1});
   _queueList->SetBounds({3, 10, contentWidth, 3});
   _waveformRule->SetBounds({0, 13, width, 1});
@@ -608,8 +613,8 @@ void Application::applyView() {
     widget->SetVisible(player);
   for (auto *widget : std::vector<tui::Widget *>{
            _details, _progress, _queueRule, _waveformRule, _waveform,
-           _playerPlayPause, _playerNext, _playerStop, _playerAddPlaylist,
-           _playerRepeat, _playerVolume, _queueList})
+           _playerPlayPause, _playerNext, _playerStop, _playerLike,
+           _playerAddPlaylist, _playerRepeat, _playerVolume, _queueList})
     widget->SetVisible(player && !_playerPickerOpen);
   _help->SetVisible(true);
   if (_widgets.FocusedId() &&
@@ -711,7 +716,8 @@ void Application::refreshPlaylists() {
       if (playlist.loop)
         modes += " ↻";
       playlistItems.push_back({std::to_string(playlist.id),
-                               playlist.name + " · " +
+                               string(playlist.fixed ? "♥ " : "") +
+                                   playlist.name + " · " +
                                    std::to_string(playlist.trackCount) +
                                    modes});
     }
@@ -922,7 +928,8 @@ void Application::rebuildPlaylistPicker() {
       if (contains)
         membership.push_back(playlist.id);
       items.push_back({std::to_string(playlist.id),
-                       string(contains ? "✓ " : "  ") + playlist.name +
+                       string(contains ? "✓ " : "  ") +
+                           (playlist.fixed ? "♥ " : "") + playlist.name +
                            " · " + std::to_string(playlist.trackCount)});
     }
     std::lock_guard lock(_widgetMtx);
@@ -1027,6 +1034,11 @@ void Application::beginPlaylistPrompt(bool rename, bool addPickerTrack) {
   auto playlist = selectedPlaylist();
   if (rename && !playlist) {
     _statusMessage = "Select a playlist to rename.";
+    _statusIsError = true;
+    return;
+  }
+  if (rename && playlist->fixed) {
+    _statusMessage = "Liked Songs is a fixed playlist and cannot be renamed.";
     _statusIsError = true;
     return;
   }
@@ -1163,6 +1175,49 @@ void Application::addCurrentTrack() {
   }
 }
 
+void Application::toggleCurrentLike() {
+  if (!_store)
+    return;
+  const auto source = _mixer->CurrentSource();
+  if (source.empty()) {
+    _statusMessage = "Nothing is currently playing.";
+    _statusIsError = true;
+    return;
+  }
+  core::TrackMetadata metadata;
+  {
+    std::lock_guard lock(_playbackCtx.metadataMtx);
+    metadata = _playbackCtx.metadata;
+  }
+  try {
+    if (_store->IsLiked(source)) {
+      _store->Unlike(source);
+      _statusMessage = "♡ Removed from Liked Songs.";
+      _statusIsError = false;
+    } else {
+      const auto result = _store->Like(
+          {0, source,
+           metadata.title.empty() ? _mixer->TrackName() : metadata.title,
+           metadata.artist, metadata.album,
+           static_cast<std::int64_t>(_playbackCtx.durationFrames.load() /
+                                     44100),
+           0, false});
+      if (result == core::AddTrackResult::Added ||
+          result == core::AddTrackResult::Duplicate) {
+        _statusMessage = "♥ Added to Liked Songs.";
+        _statusIsError = false;
+      } else {
+        _statusMessage = addTrackMessage(result);
+        _statusIsError = true;
+      }
+    }
+    _playlistRefresh.store(true);
+  } catch (const std::exception &error) {
+    _statusMessage = "Could not update Liked Songs: " + string(error.what());
+    _statusIsError = true;
+  }
+}
+
 void Application::removePlaylistTrack() {
   auto playlist = selectedPlaylist();
   std::int64_t entryId = 0;
@@ -1270,6 +1325,11 @@ void Application::deleteSelectedPlaylist() {
   const auto playlist = selectedPlaylist();
   if (!playlist)
     return;
+  if (playlist->fixed) {
+    _statusMessage = "Liked Songs is a fixed playlist and cannot be deleted.";
+    _statusIsError = true;
+    return;
+  }
   if (_deleteConfirmationId != playlist->id) {
     _deleteConfirmationId = playlist->id;
     _statusMessage = "Choose DELETE again to remove '" + playlist->name + "'.";
@@ -1322,6 +1382,7 @@ void Application::renderUi() {
   _visualizationCtx.uiTopRow.store(top);
   const int contentWidth = width - 6;
   const string track = _mixer->TrackName();
+  const string source = _mixer->CurrentSource();
   const auto queue = _mixer->UpcomingTracks(3);
   const auto queueSize = _trackQueue.Size();
   const bool playlistLooping = _mixer->IsPlaylistLooping();
@@ -1361,6 +1422,22 @@ void Application::renderUi() {
                                             static_cast<double>(duration),
                                         0.0, 1.0)
                            : 0.0;
+  if (_store) {
+    const auto revision = _store->Revision();
+    if (source != _likedSource || revision != _likedRevision) {
+      try {
+        _currentTrackLiked = _store->IsLiked(source);
+        _likedSource = source;
+        _likedRevision = revision;
+      } catch (const std::exception &error) {
+        _currentTrackLiked = false;
+        _statusMessage = "Could not read Liked Songs: " + string(error.what());
+        _statusIsError = true;
+      }
+    }
+  } else {
+    _currentTrackLiked = false;
+  }
 
   std::lock_guard widgetLock(_widgetMtx);
   configureWidgets(width);
@@ -1378,6 +1455,7 @@ void Application::renderUi() {
   _progress->SetLabels(formatDuration(position),
                        duration > 0 ? formatDuration(duration) : "--:--");
   _playerPlayPause->SetLabel(playing && !paused ? "|| PAUSE" : "|> PLAY");
+  _playerLike->SetLabel(_currentTrackLiked ? "♥ LIKED" : "♡ LIKE");
   _playerRepeat->SetLabel(_mixer->IsRepeatOn() ? "↻ REPEAT ON"
                                                : "↻ REPEAT OFF");
   _playerVolume->SetValue(_mixer->Volume());
