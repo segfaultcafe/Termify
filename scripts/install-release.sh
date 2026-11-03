@@ -9,17 +9,24 @@ fi
 
 INSTALL_PREFIX="${1:-${PREFIX:-$HOME/.local}}"
 
+install_executable() {
+  local source="$1"
+  local destination="$2"
+  mkdir -p "$(dirname "$destination")" &&
+    install -m 755 "$source" "$destination"
+}
+
 if [[ ! -x "$PACKAGE_DIR/termify" || ! -x "$PACKAGE_DIR/yt-dlp" ]]; then
   echo "The release archive is incomplete: termify or yt-dlp is missing." >&2
   exit 1
 fi
 
-install -Dm755 "$PACKAGE_DIR/termify" "$INSTALL_PREFIX/bin/termify"
+install_executable "$PACKAGE_DIR/termify" "$INSTALL_PREFIX/bin/termify"
 YTDLP_TARGET="$INSTALL_PREFIX/lib/termify/yt-dlp"
-if ! install -Dm755 "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"; then
+if ! install_executable "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"; then
   YTDLP_TARGET="$INSTALL_PREFIX/bin/yt-dlp"
   echo "Could not write to $INSTALL_PREFIX/lib; using $YTDLP_TARGET instead." >&2
-  install -Dm755 "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"
+  install_executable "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"
 fi
 
 echo "Installed Termify to $INSTALL_PREFIX/bin/termify"

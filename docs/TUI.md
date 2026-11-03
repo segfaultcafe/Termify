@@ -92,8 +92,11 @@ results with a compact picker; `✓` labels expose membership before activation
 and remain visible after an add or duplicate no-op. The picker can create a
 named playlist through the shared command prompt and immediately add its
 pending track. The Player exposes the same picker for the current track from
-an action embedded in the `UP NEXT` divider. Visible Search result labels are
-numbered from one while their stable internal IDs preserve selection.
+an action embedded in the `UP NEXT` divider. The adjacent heart button toggles
+the current track in the permanent Liked Songs playlist and follows storage
+revisions so edits made in the Playlists view update Player. Visible Search
+result labels are numbered from one while their stable internal IDs preserve
+selection.
 
 The three-row file-style tab strip sits above the shared player frame. Its
 active marker, bordered inactive tabs, hover color, and inline navigation hint
@@ -119,8 +122,9 @@ public:
 
 Register the instance once with `WidgetHost::Emplace`, retain the returned
 reference, and update its bounds and view data before rendering. Widget order is
-paint order; mouse hit testing uses the reverse order so the topmost visible
-widget receives a click.
+paint order; controls which overlay a `Rule` must be registered after that rule.
+Mouse hit testing uses the reverse order so the topmost visible widget receives
+a click.
 
 ## Coordinates and input
 
@@ -160,10 +164,11 @@ from the input loop.
 
 A seek request is stored atomically in output-frame units. The decoder wakes
 even when the ring buffer is full, seeks and flushes FFmpeg state, clears stale
-decoded frames, and increments a generation counter. The ALSA worker observes
-that generation, drops already-buffered device audio, prepares the device, and
-discards any chunk from the previous generation. This keeps seeking responsive
-while playing or paused without racing the decoder and output threads.
+decoded frames, and increments a generation counter. The native audio worker
+observes that generation, drops already-buffered device audio, prepares the
+device, and discards any chunk from the previous generation. This keeps seeking
+responsive while playing or paused without racing the decoder and output
+threads.
 
 Canvas clipping is mandatory: a widget must remain safe when its assigned area
 is smaller than its preferred content. The current canvas treats each Unicode
@@ -175,7 +180,8 @@ is a future improvement.
 `LocalStore` owns an embedded SQLite connection, versioned schema, bounded play
 history, playlists, the disk-cache index, and persisted settings. Schema v3
 stores the clamped output volume and verified provider titles with cached audio;
-missing settings retain the normal default.
+schema v4 adds protected system playlists and seeds Liked Songs. Missing
+settings retain the normal default.
 Playlist entries reference a
 SHA-256 of the canonical media URL and keep metadata in a normalized library
 table; they never own or delete cache files. The audio output thread enqueues a

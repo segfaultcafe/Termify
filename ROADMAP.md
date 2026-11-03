@@ -82,12 +82,11 @@ leaves the terminal or system in a broken state.
   play them immediately from the Player, with precise CLI removal and
   reordering that preserves manual-request priority and leaves saved playlists
   untouched.
-- **v0.7.0 — macOS port and liked songs:** add a persistent Liked Songs playlist
-  and Player heart toggle; replace the Linux-only audio coupling with a platform
-  audio boundary and a native macOS backend; handle macOS terminal, process,
-  filesystem, and executable-location differences; bundle the correct verified
-  yt-dlp artifact; add Apple Silicon and Intel CI coverage; document macOS
-  dependencies and installation; and preserve all existing Linux behavior.
+- **v0.7.0 — macOS port and liked songs (released):** persistent Liked Songs
+  and a Player heart toggle; a platform audio boundary and native Core Audio
+  backend; macOS terminal, process, filesystem, and executable discovery;
+  verified native packages for Apple Silicon and Intel; and preserved Linux
+  behavior.
 - **v0.8 — Distribution:** ship AppImage builds, add Linux ARM64, automate
   releases, add verified update checks and rollback, and test packages on clean
   supported distributions.
@@ -122,7 +121,7 @@ foundations:
 
 Still next:
 
-- Add favorites and broader playlist import/export workflows.
+- Add broader playlist import/export workflows.
 - Expand persistence beyond volume to configuration and the upcoming queue.
 - Define explicit history/cache management controls and safe schema migrations
   before adding more persistent library data. Schema v3 adds settings-backed

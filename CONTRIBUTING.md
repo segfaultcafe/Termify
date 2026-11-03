@@ -1,8 +1,8 @@
 # Contributing to Termify
 
 Thanks for helping make Termify a better free and open-source music player for
-Linux. Contributions of code, tests, documentation, bug reports, and focused
-feature proposals are welcome.
+Linux and macOS. Contributions of code, tests, documentation, bug reports, and
+focused feature proposals are welcome.
 
 ## Before you start
 
@@ -24,16 +24,22 @@ macros.
 
 ## Development setup
 
-Termify currently targets Linux and requires:
+Termify targets Linux and macOS and requires:
 
 - CMake 3.16 or newer
 - A C++23-capable compiler
 - `pkg-config`
 - FFmpeg development libraries: `libavformat`, `libavcodec`, `libavutil`, and
   `libswresample`
-- ALSA development libraries
+- ALSA development libraries on Linux; Core Audio is provided by macOS
 - SQLite3 development libraries
-- `curl` and `sha256sum`
+- `curl` and either `sha256sum` or `shasum`
+
+On macOS, install the development dependencies with:
+
+```bash
+brew install cmake ffmpeg ninja pkg-config sqlite
+```
 
 Clone your fork and build the Debug target:
 
@@ -206,6 +212,10 @@ For packaging or installer changes, also run `make package`, verify the
 generated checksum, and test the staged binary's `--version` output. Tests
 must not depend on a user's real library, cache, network state, or audio
 device; use isolated temporary paths and deterministic fixtures.
+
+Maintainers preparing a tag must also complete [docs/RELEASE.md](docs/RELEASE.md),
+including real-device audio and visible Player-control checks that hosted CI
+cannot perform.
 
 ## Documentation and user-facing changes
 
