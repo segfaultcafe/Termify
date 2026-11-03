@@ -2,12 +2,13 @@
 #define _TERMIFY_CORE_RINGBUFFER_HPP
 
 #include "Common.hpp"
+#include "../Platform/Services.hpp"
 
 namespace termify::core {
 
 class RingBuffer {
 public:
-  static void Update(AtomicContext &ctx, snd_pcm_t **ppPcm);
+  static void Update(AtomicContext &ctx, platform::AudioOutput &output);
 };
 
 

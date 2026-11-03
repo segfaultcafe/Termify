@@ -1,13 +1,9 @@
 #include "AudioDownloader.hpp"
+#include "../Platform/Services.hpp"
 
 #include <cctype>
-#include <cerrno>
-#include <fcntl.h>
 #include <fstream>
-#include <signal.h>
 #include <stdexcept>
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace termify::core {
 
@@ -95,9 +91,9 @@ bool YtDlpManager::Init() {
     return true;
 
   try {
-    _executablePath = getGlobalLocation();
+    _executablePath = platform::CurrentPlatform().Files().ExecutableDirectory();
     _ytDlpExecutablePath = getYtDlpLocation();
-    if (access(_ytDlpExecutablePath.c_str(), X_OK) != 0) {
+    if (_ytDlpExecutablePath.empty()) {
       return false;
     }
   } catch (const std::exception &e) {
@@ -211,9 +207,10 @@ SearchResponse YtDlpManager::SearchYouTube(const string &query,
     }
   }
 
-  static std::atomic_uint64_t sequence{0};
-  const string stem = "/tmp/termify-search-" + std::to_string(getpid()) + "-" +
-                      std::to_string(sequence.fetch_add(1));
+  const string stem = platform::CurrentPlatform()
+                          .Files()
+                          .TemporaryStem("termify-search")
+                          .string();
   const std::filesystem::path outputPath = stem + ".results";
   const std::filesystem::path errorPath = stem + ".log";
   const string source =
@@ -221,52 +218,18 @@ SearchResponse YtDlpManager::SearchYouTube(const string &query,
   const string outputFormat =
       "%(id)s\x1f%(title)s\x1f%(channel)s\x1f%(duration)s\x1f%(webpage_url)s";
 
-  const pid_t child = fork();
-  if (child < 0)
-    throw std::runtime_error("Failed to start YouTube search");
-  if (child == 0) {
-    setpgid(0, 0);
-    const int output =
-        open(outputPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (output >= 0) {
-      dup2(output, STDOUT_FILENO);
-      close(output);
-    }
-    const int errorLog =
-        open(errorPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (errorLog >= 0) {
-      dup2(errorLog, STDERR_FILENO);
-      close(errorLog);
-    }
-    execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(),
-          "--quiet", "--no-warnings", "--no-playlist", "--flat-playlist",
-          "--skip-download", "--socket-timeout", "10", "--retries", "1",
-          "--extractor-retries", "1", "--print", outputFormat.c_str(),
-          source.c_str(), static_cast<char *>(nullptr));
-    _exit(127);
-  }
-  setpgid(child, child);
-  int status = 0;
-  bool timedOut = false;
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds(30);
-  while (true) {
-    const auto waited = waitpid(child, &status, WNOHANG);
-    if (waited == child)
-      break;
-    if (waited < 0 && errno != EINTR)
-      throw std::runtime_error("Failed while waiting for YouTube search");
-    if (std::chrono::steady_clock::now() >= deadline) {
-      timedOut = true;
-      kill(-child, SIGTERM);
-      waitpid(child, &status, 0);
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
+  const auto process = platform::CurrentPlatform().Processes().Run(
+      {.executable = _ytDlpExecutablePath,
+       .arguments = {"--quiet", "--no-warnings", "--no-playlist",
+                     "--flat-playlist", "--skip-download", "--socket-timeout",
+                     "10", "--retries", "1", "--extractor-retries", "1",
+                     "--print", outputFormat, source},
+       .standardOutput = outputPath,
+       .standardError = errorPath},
+      nullptr, std::chrono::seconds(30));
 
   vector<SearchResult> results;
-  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+  if (process.Succeeded()) {
     std::ifstream output(outputPath);
     string line;
     while (results.size() < limit && std::getline(output, line)) {
@@ -295,8 +258,9 @@ SearchResponse YtDlpManager::SearchYouTube(const string &query,
   }
   const string detail =
       results.empty()
-          ? (timedOut ? "the provider did not respond within 30 seconds"
-                      : readDownloadError(errorPath))
+          ? (process.completion == platform::ProcessCompletion::TimedOut
+                 ? "the provider did not respond within 30 seconds"
+                 : readDownloadError(errorPath))
           : "";
   std::error_code error;
   std::filesystem::remove(outputPath, error);
@@ -326,9 +290,10 @@ YtDlpManager::download(const string &query, const atomic_bool *cancel) {
     throw std::runtime_error(
         "yt-dlp is unavailable; reinstall Termify or set TERMIFY_YTDLP");
 
-  static std::atomic_uint64_t sequence{0};
-  const string stem = "/tmp/termify-audio-" + std::to_string(getpid()) + "-" +
-                      std::to_string(sequence.fetch_add(1));
+  const string stem = platform::CurrentPlatform()
+                          .Files()
+                          .TemporaryStem("termify-audio")
+                          .string();
   const string outputTemplate = stem + ".%(ext)s";
   const std::filesystem::path errorPath = stem + ".log";
   const std::filesystem::path sourcePath = stem + ".source";
@@ -337,59 +302,28 @@ YtDlpManager::download(const string &query, const atomic_bool *cancel) {
           ? query
           : "ytsearch1:" + query;
 
-  const pid_t child = fork();
-  if (child < 0)
-    throw std::runtime_error("Failed to start yt-dlp");
+  const string metadataFormat = "after_move:%(webpage_url)s\x1f%(title)s";
+  const auto process = platform::CurrentPlatform().Processes().Run(
+      {.executable = _ytDlpExecutablePath,
+       .arguments = {"--quiet", "--no-warnings", "--no-playlist",
+                     "--extract-audio", "--audio-format", "mp3",
+                     "--embed-metadata", "--print", metadataFormat, "-o",
+                     outputTemplate, source},
+       .standardOutput = sourcePath,
+       .standardError = errorPath},
+      cancel);
 
-  if (child == 0) {
-    setpgid(0, 0);
-    const int sourceOutput =
-        open(sourcePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (sourceOutput >= 0) {
-      dup2(sourceOutput, STDOUT_FILENO);
-      close(sourceOutput);
-    }
-    const int errorLog =
-        open(errorPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (errorLog >= 0) {
-      dup2(errorLog, STDERR_FILENO);
-      close(errorLog);
-    }
-
-    const string metadataFormat =
-        "after_move:%(webpage_url)s\x1f%(title)s";
-    execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(), "--quiet",
-          "--no-warnings", "--no-playlist", "--extract-audio", "--audio-format",
-          "mp3", "--embed-metadata", "--print", metadataFormat.c_str(),
-          "-o", outputTemplate.c_str(), source.c_str(),
-          static_cast<char *>(nullptr));
-    _exit(127);
-  }
-  setpgid(child, child);
-
-  int status = 0;
-  while (true) {
-    const pid_t result = waitpid(child, &status, WNOHANG);
-    if (result == child)
-      break;
-    if (result < 0 && errno != EINTR)
-      throw std::runtime_error("Failed while waiting for yt-dlp");
-    if (cancel && cancel->load()) {
-      kill(-child, SIGTERM);
-      waitpid(child, &status, 0);
-      std::error_code error;
-      std::filesystem::remove(stem + ".mp3", error);
-      std::filesystem::remove(stem + ".mp3.part", error);
-      std::filesystem::remove(errorPath, error);
-      std::filesystem::remove(sourcePath, error);
-      throw std::runtime_error("Download cancelled");
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  if (process.completion == platform::ProcessCompletion::Cancelled) {
+    std::error_code error;
+    std::filesystem::remove(stem + ".mp3", error);
+    std::filesystem::remove(stem + ".mp3.part", error);
+    std::filesystem::remove(errorPath, error);
+    std::filesystem::remove(sourcePath, error);
+    throw std::runtime_error("Download cancelled");
   }
 
   const string output = stem + ".mp3";
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
-      !std::filesystem::exists(output)) {
+  if (!process.Succeeded() || !std::filesystem::exists(output)) {
     const string detail = readDownloadError(errorPath);
     std::error_code error;
     std::filesystem::remove(output, error);
@@ -428,49 +362,26 @@ string YtDlpManager::resolveSource(const string &query,
                                    const atomic_bool *cancel) {
   if (!_initialized)
     throw std::runtime_error("yt-dlp is unavailable");
-  static std::atomic_uint64_t sequence{0};
-  const string path = "/tmp/termify-source-" + std::to_string(getpid()) + "-" +
-                      std::to_string(sequence.fetch_add(1));
+  const string path = platform::CurrentPlatform()
+                          .Files()
+                          .TemporaryStem("termify-source")
+                          .string();
   const string source =
       query.starts_with("http://") || query.starts_with("https://")
           ? query
           : "ytsearch1:" + query;
-  const pid_t child = fork();
-  if (child < 0)
-    throw std::runtime_error("Failed to start yt-dlp");
-  if (child == 0) {
-    setpgid(0, 0);
-    const int output = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (output >= 0) {
-      dup2(output, STDOUT_FILENO);
-      close(output);
-    }
-    const int devNull = open("/dev/null", O_WRONLY);
-    if (devNull >= 0) {
-      dup2(devNull, STDERR_FILENO);
-      close(devNull);
-    }
-    execl(_ytDlpExecutablePath.c_str(), _ytDlpExecutablePath.c_str(), "--quiet",
-          "--no-warnings", "--no-playlist", "--skip-download", "--print",
-          "%(webpage_url)s", source.c_str(), static_cast<char *>(nullptr));
-    _exit(127);
-  }
-  setpgid(child, child);
-  int status = 0;
-  while (true) {
-    const pid_t result = waitpid(child, &status, WNOHANG);
-    if (result == child)
-      break;
-    if (result < 0 && errno != EINTR)
-      throw std::runtime_error("Failed while resolving media URL");
-    if (cancel && cancel->load()) {
-      kill(-child, SIGTERM);
-      waitpid(child, &status, 0);
-      std::error_code error;
-      std::filesystem::remove(path, error);
-      throw std::runtime_error("Source resolution cancelled");
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  const auto process = platform::CurrentPlatform().Processes().Run(
+      {.executable = _ytDlpExecutablePath,
+       .arguments = {"--quiet", "--no-warnings", "--no-playlist",
+                     "--skip-download", "--print", "%(webpage_url)s", source},
+       .standardOutput = path,
+       .standardError = std::nullopt,
+       .discardStandardError = true},
+      cancel);
+  if (process.completion == platform::ProcessCompletion::Cancelled) {
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    throw std::runtime_error("Source resolution cancelled");
   }
   string canonical;
   {
@@ -483,78 +394,26 @@ string YtDlpManager::resolveSource(const string &query,
       std::remove_if(canonical.begin(), canonical.end(),
                      [](unsigned char ch) { return ch < 32 || ch == 127; }),
       canonical.end());
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+  if (!process.Succeeded() ||
       (!canonical.starts_with("https://") && !canonical.starts_with("http://")))
     throw std::runtime_error("yt-dlp did not resolve a canonical media URL");
   return canonical;
 }
 
-std::filesystem::path YtDlpManager::getGlobalLocation() {
-#if defined(_WIN32)
-  char path[MAX_PATH];
-  GetModuleFileNameA(nullptr, path, MAX_PATH);
-  return std::filesystem::path(path).parent_path();
-
-#elif defined(__linux__)
-  char path[4096];
-  ssize_t count = readlink("/proc/self/exe", path, sizeof(path));
-  if (count == -1)
-    throw std::runtime_error("Failed to read /proc/self/exe");
-  return std::filesystem::path(string(path, count)).parent_path();
-
-#elif defined(__APPLE__)
-  char path[4096];
-  uint32_t size = sizeof(path);
-  if (_NSGetExecutablePath(path, &size) != 0)
-    throw std::runtime_error("Buffer too small for executable path");
-  return std::filesystem::path(path).parent_path();
-
-#else
-  static_assert(false, "Unsupported platform");
-#endif
-}
-
 std::filesystem::path YtDlpManager::getYtDlpLocation() {
+  std::vector<std::filesystem::path> preferred;
   if (const char *overridePath = std::getenv("TERMIFY_YTDLP")) {
-    if (*overridePath != '\0' && access(overridePath, X_OK) == 0) {
-      return overridePath;
-    }
+    if (*overridePath != '\0')
+      preferred.emplace_back(overridePath);
   }
 
-  const vector<std::filesystem::path> bundledCandidates = {
-      _executablePath / "yt-dlp",
-      _executablePath.parent_path() / "lib/termify/yt-dlp",
-#ifndef NDEBUG
-      _executablePath / ".local/bin/yt-dlp",
-#else
-      "/usr/local/share/termify/bin/yt-dlp",
-#endif
-  };
-  for (const auto &candidate : bundledCandidates) {
-    if (access(candidate.c_str(), X_OK) == 0) {
-      return candidate;
-    }
-  }
-
-  if (const char *pathValue = std::getenv("PATH")) {
-    const string paths(pathValue);
-    std::size_t start = 0;
-    while (start <= paths.size()) {
-      const std::size_t end = paths.find(':', start);
-      const string directory = paths.substr(start, end - start);
-      if (!directory.empty()) {
-        const auto candidate = std::filesystem::path(directory) / "yt-dlp";
-        if (access(candidate.c_str(), X_OK) == 0) {
-          return candidate;
-        }
-      }
-      if (end == string::npos)
-        break;
-      start = end + 1;
-    }
-  }
-
-  return bundledCandidates.front();
+  preferred.push_back(_executablePath / "yt-dlp");
+  preferred.push_back(_executablePath.parent_path() / "lib/termify/yt-dlp");
+  preferred.push_back(_executablePath / ".local/bin/yt-dlp");
+  return platform::CurrentPlatform()
+      .Files()
+      .FindExecutable("yt-dlp", preferred)
+      .value_or(std::filesystem::path{});
 }
 
 } // namespace termify::core

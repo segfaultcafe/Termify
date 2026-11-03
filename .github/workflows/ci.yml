@@ -148,9 +148,75 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  linux-containers:
+    name: Integration (${{ matrix.distribution }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution: [arch, debian, ubuntu]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build, test, and launch in container
+        run: |
+          docker build \
+            --file "docker/ci/${{ matrix.distribution }}.Dockerfile" \
+            --tag "termify-ci:${{ matrix.distribution }}" \
+            .
+
+  macos:
+    name: Integration (macOS ${{ matrix.architecture }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: macos-15-intel
+          - architecture: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify native architecture
+        run: test "$(uname -m)" = "${{ matrix.architecture }}"
+
+      - name: Install build dependencies
+        run: brew install cmake ffmpeg ninja pkg-config sqlite
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS=-Werror \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
+            -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Run unit and startup integration tests
+        timeout-minutes: 5
+        run: |
+          ctest --test-dir build \
+            --output-on-failure \
+            --output-junit "test-results-${{ matrix.architecture }}.xml"
+
+      - name: Upload test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ctest-macos-${{ matrix.architecture }}
+          path: build/test-results-${{ matrix.architecture }}.xml
+          if-no-files-found: error
+          retention-days: 14
+
   package:
     name: Package smoke test
-    needs: [hygiene, build, sanitizers]
+    needs: [hygiene, build, sanitizers, linux-containers, macos]
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository

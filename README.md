@@ -28,6 +28,7 @@
   seeking while playing or paused
 - Persistent playlists built from previously heard cached tracks or verified
   YouTube Search results
+- A persistent **Liked Songs** playlist with a one-click heart toggle in Player
 - Local play history and a bounded audio cache for replaying downloaded tracks
 - Pause, resume, skip, repeat, stop, and software volume control
 - Editable Unicode-aware input with cursor movement and deletion
@@ -47,6 +48,10 @@ looping playlist's queue visibly continuous between cycles.
 playback and adds precise `queue` editing commands. Queue edits affect only the
 current playback session; saved playlist order remains unchanged. The Player's
 existing help row remains uncluttered.
+
+**v0.7.0** adds a `♡ LIKE` / `♥ LIKED` toggle to Player and a permanent
+**Liked Songs** playlist. The playlist can be played and reordered like any
+other playlist, but cannot be renamed or deleted.
 
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
@@ -241,6 +246,10 @@ next
 - The Player's **ADD TO PLAYLIST** button opens the same picker for the current
   track, including the inline **NEW PLAYLIST** flow. Cached/history eligibility
   is still enforced before the current track can be saved.
+- The adjacent `♡ LIKE` button adds the current track to the permanent **Liked
+  Songs** playlist and changes to `♥ LIKED`. Activate it again to remove the
+  track. The heart follows the current track and updates when membership changes
+  from the Playlists tab.
 - **UP NEXT** is a selectable three-row list. Double-clicking or pressing
   Enter plays the selected track now. Use `queue remove N`, `queue move N
   up|down`, or `queue clear` for precise queue editing without replacing the
@@ -291,12 +300,14 @@ continues without persistence and the interface reports the problem.
 
 ### Playlists
 
-Playlists contain up to **20** tracks so playing one remains within Termify's
-bounded queue. A track can be added only after it has reached audio output,
-appears in History, and still has a valid cache entry. Termify stores a SHA-256
-identity for yt-dlp's canonical media URL plus its embedded title, artist,
-album, and duration. It never treats a newly typed search phrase as playlist
-truth and never copies audio into a playlist.
+User-created playlists contain up to **20** tracks so playing one remains within
+Termify's bounded queue. The permanent **Liked Songs** playlist is not capped;
+it is created automatically and cannot be renamed or deleted. A track can be
+liked or added from Player only after it has reached audio output, appears in
+History, and still has a valid cache entry. Termify stores a SHA-256 identity
+for yt-dlp's canonical media URL plus its embedded title, artist, album, and
+duration. It never treats a newly typed search phrase as playlist truth and
+never copies audio into a playlist.
 
 **SHUFFLE** randomizes the order each time the playlist starts and for every
 new loop. **LOOP** repeats the whole playlist independently of the `repeat`
@@ -354,10 +365,15 @@ components.
 
 ## Platform status
 
-Termify currently supports Linux. Windows support is planned around a
-cross-platform audio backend and platform-specific terminal and process
-adapters; the decoder, queue, metadata, progress, and playback state are
-already portable.
+Termify currently supports Linux. The v0.7.0 milestone ports Termify to macOS
+with a native audio backend, platform-specific terminal and process handling,
+verified bundled yt-dlp builds, and Apple Silicon and Intel CI coverage.
+Windows remains a post-1.0 target. The decoder, queue, metadata, progress, and
+playback state are already portable.
+
+OS integrations are composed from narrow process, filesystem, terminal, and
+audio interfaces. See [docs/PLATFORM.md](docs/PLATFORM.md) for the boundary and
+porting contract.
 
 The supported-release goals and milestones are tracked in
 [ROADMAP.md](ROADMAP.md).

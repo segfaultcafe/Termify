@@ -2,14 +2,10 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <ctime>
-#include <fcntl.h>
 #include <set>
 #include <sqlite3.h>
 #include <stdexcept>
-#include <sys/file.h>
-#include <unistd.h>
 #include <utility>
 
 namespace termify::core {
@@ -74,27 +70,9 @@ private:
   bool _committed{false};
 };
 
-std::filesystem::path xdgDirectory(const char *variable, const char *fallback) {
-  if (const char *value = std::getenv(variable);
-      value && *value && std::filesystem::path(value).is_absolute())
-    return std::filesystem::path(value) / "termify";
-  const char *home = std::getenv("HOME");
-  if (!home || !*home || !std::filesystem::path(home).is_absolute())
-    throw std::runtime_error(
-        "HOME or an absolute XDG directory is required for storage");
-  return std::filesystem::path(home) / fallback / "termify";
-}
-
 std::shared_ptr<CacheLease> lockFile(const std::filesystem::path &path,
-                                     int mode) {
-  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-  if (fd < 0)
-    return {};
-  if (flock(fd, mode | LOCK_NB) != 0) {
-    close(fd);
-    return {};
-  }
-  return std::make_shared<CacheLease>(fd);
+                                     platform::FileLockMode mode) {
+  return platform::CurrentPlatform().Files().TryLock(path, mode);
 }
 
 std::string playlistName(std::string value) {
@@ -114,13 +92,12 @@ std::string playlistName(std::string value) {
 }
 } // namespace
 
-CacheLease::~CacheLease() { close(fd); }
-
 std::filesystem::path LocalStore::DefaultDataDirectory() {
-  return xdgDirectory("XDG_DATA_HOME", ".local/share");
+  return platform::CurrentPlatform().Files().UserDataDirectory("termify");
 }
 std::filesystem::path LocalStore::DefaultCacheDirectory() {
-  return xdgDirectory("XDG_CACHE_HOME", ".cache") / "audio";
+  return platform::CurrentPlatform().Files().UserCacheDirectory("termify") /
+         "audio";
 }
 
 LocalStore::LocalStore(std::filesystem::path dataDirectory,
@@ -155,7 +132,7 @@ LocalStore::LocalStore(std::filesystem::path dataDirectory,
       version.Next();
       schemaVersion = version.Number(0);
     }
-    if (schemaVersion > 3)
+    if (schemaVersion > 4)
       throw std::runtime_error(
           "Local library was created by a newer Termify version");
     execute(_db, "PRAGMA journal_mode=WAL");
@@ -202,8 +179,18 @@ LocalStore::LocalStore(std::filesystem::path dataDirectory,
           "NULL, UNIQUE(playlist_id,source_hash),"
           "UNIQUE(playlist_id,position));"
           "CREATE TABLE IF NOT EXISTS settings ("
-          "key TEXT PRIMARY KEY,value INTEGER NOT NULL);"
-          "PRAGMA user_version=3;");
+          "key TEXT PRIMARY KEY,value INTEGER NOT NULL);");
+      if (schemaVersion < 4)
+        execute(_db, "ALTER TABLE playlists ADD COLUMN system_key TEXT;");
+      execute(
+          _db,
+          "CREATE UNIQUE INDEX IF NOT EXISTS playlists_system_key ON "
+          "playlists(system_key) WHERE system_key IS NOT NULL;"
+          "UPDATE playlists SET system_key='liked' WHERE name='Liked Songs' "
+          "AND system_key IS NULL;"
+          "INSERT OR IGNORE INTO playlists(name,shuffle,loop,created_at,"
+          "system_key) VALUES('Liked Songs',0,0,0,'liked');"
+          "PRAGMA user_version=4;");
       migration.Commit();
     }
     Transaction transaction(_db);
@@ -221,7 +208,8 @@ LocalStore::LocalStore(std::filesystem::path dataDirectory,
       const auto name = file.path().filename().string();
       if (!name.starts_with("audio-") || indexed.contains(name))
         continue;
-      if (auto exclusive = lockFile(file.path(), LOCK_EX)) {
+      if (auto exclusive =
+              lockFile(file.path(), platform::FileLockMode::Exclusive)) {
         std::error_code error;
         std::filesystem::remove(file.path(), error);
       }
@@ -401,7 +389,9 @@ std::optional<CachedAudio> LocalStore::findAudio(const std::string &source) {
     title = query.Text(3);
   }
   const auto path = cachePath(filename);
-  auto lease = path.empty() ? nullptr : lockFile(path, LOCK_SH);
+  auto lease = path.empty()
+                   ? nullptr
+                   : lockFile(path, platform::FileLockMode::Shared);
   std::error_code error;
   if (!lease || expectedSize <= 0 ||
       std::filesystem::file_size(path, error) !=
@@ -423,14 +413,15 @@ std::optional<CachedAudio> LocalStore::findAudio(const std::string &source) {
 std::vector<Playlist> LocalStore::Playlists() {
   std::lock_guard lock(_mutex);
   Statement query(
-      _db, "SELECT p.id,p.name,p.shuffle,p.loop,COUNT(e.id) FROM playlists p "
+      _db, "SELECT p.id,p.name,p.shuffle,p.loop,p.system_key IS NOT NULL,"
+           "COUNT(e.id) FROM playlists p "
            "LEFT JOIN playlist_entries e ON e.playlist_id=p.id GROUP BY p.id "
-           "ORDER BY p.created_at,p.id");
+           "ORDER BY p.system_key='liked' DESC,p.created_at,p.id");
   std::vector<Playlist> playlists;
   while (query.Next())
     playlists.push_back({query.Number(0), query.Text(1), query.Number(2) != 0,
-                         query.Number(3) != 0,
-                         static_cast<std::size_t>(query.Number(4))});
+                         query.Number(3) != 0, query.Number(4) != 0,
+                         static_cast<std::size_t>(query.Number(5))});
   return playlists;
 }
 
@@ -472,7 +463,8 @@ bool LocalStore::RenamePlaylist(std::int64_t playlistId,
                                 const std::string &name) {
   const auto cleaned = playlistName(name);
   std::lock_guard lock(_mutex);
-  Statement update(_db, "UPDATE playlists SET name=? WHERE id=?");
+  Statement update(
+      _db, "UPDATE playlists SET name=? WHERE id=? AND system_key IS NULL");
   update.Text(1, cleaned);
   update.Number(2, playlistId);
   update.Next();
@@ -484,7 +476,8 @@ bool LocalStore::RenamePlaylist(std::int64_t playlistId,
 
 bool LocalStore::DeletePlaylist(std::int64_t playlistId) {
   std::lock_guard lock(_mutex);
-  Statement remove(_db, "DELETE FROM playlists WHERE id=?");
+  Statement remove(_db,
+                   "DELETE FROM playlists WHERE id=? AND system_key IS NULL");
   remove.Number(1, playlistId);
   remove.Next();
   const bool changed = sqlite3_changes(_db) != 0;
@@ -515,6 +508,60 @@ bool LocalStore::SetPlaylistLoop(std::int64_t playlistId, bool enabled) {
   if (changed)
     ++_revision;
   return changed;
+}
+
+std::int64_t LocalStore::likedPlaylistId() {
+  std::lock_guard lock(_mutex);
+  Statement query(_db, "SELECT id FROM playlists WHERE system_key='liked'");
+  if (!query.Next())
+    throw std::runtime_error("Liked Songs playlist is unavailable");
+  return query.Number(0);
+}
+
+bool LocalStore::IsLiked(const std::string &source) {
+  if (source.empty())
+    return false;
+  std::lock_guard lock(_mutex);
+  Statement query(
+      _db,
+      "SELECT 1 FROM playlist_entries e JOIN playlists p ON p.id=e.playlist_id "
+      "WHERE p.system_key='liked' AND e.source_hash=? LIMIT 1");
+  query.Text(1, SourceHash(source));
+  return query.Next();
+}
+
+AddTrackResult LocalStore::Like(const HistoryEntry &track) {
+  return AddSourceToPlaylist(likedPlaylistId(), track);
+}
+
+bool LocalStore::Unlike(const std::string &source) {
+  if (source.empty())
+    return false;
+  std::lock_guard lock(_mutex);
+  Transaction transaction(_db);
+  Statement entry(
+      _db, "SELECT e.id,e.playlist_id,e.position FROM playlist_entries e JOIN "
+           "playlists p ON p.id=e.playlist_id WHERE p.system_key='liked' AND "
+           "e.source_hash=? LIMIT 1");
+  entry.Text(1, SourceHash(source));
+  if (!entry.Next()) {
+    transaction.Commit();
+    return false;
+  }
+  const auto entryId = entry.Number(0);
+  const auto playlistId = entry.Number(1);
+  const auto position = entry.Number(2);
+  Statement remove(_db, "DELETE FROM playlist_entries WHERE id=?");
+  remove.Number(1, entryId);
+  remove.Next();
+  Statement compact(_db, "UPDATE playlist_entries SET position=position-1 "
+                         "WHERE playlist_id=? AND position>?");
+  compact.Number(1, playlistId);
+  compact.Number(2, position);
+  compact.Next();
+  transaction.Commit();
+  ++_revision;
+  return true;
 }
 
 AddTrackResult LocalStore::AddHistoryToPlaylist(std::int64_t playlistId,
@@ -565,12 +612,19 @@ AddTrackResult LocalStore::AddSourceToPlaylist(std::int64_t playlistId,
   if (!heard.Next())
     return AddTrackResult::HistoryNotFound;
 
-  Statement count(_db,
-                  "SELECT COUNT(*) FROM playlist_entries WHERE playlist_id=?");
-  count.Number(1, playlistId);
-  count.Next();
-  if (count.Number(0) >= PLAYLIST_TRACK_LIMIT)
-    return AddTrackResult::PlaylistFull;
+  Statement playlist(_db,
+                     "SELECT system_key IS NULL FROM playlists WHERE id=?");
+  playlist.Number(1, playlistId);
+  if (!playlist.Next())
+    throw std::runtime_error("Playlist no longer exists");
+  if (playlist.Number(0) != 0) {
+    Statement count(
+        _db, "SELECT COUNT(*) FROM playlist_entries WHERE playlist_id=?");
+    count.Number(1, playlistId);
+    count.Next();
+    if (count.Number(0) >= PLAYLIST_TRACK_LIMIT)
+      return AddTrackResult::PlaylistFull;
+  }
 
   const auto hash = SourceHash(canonical);
   Transaction transaction(_db);
@@ -618,12 +672,19 @@ LocalStore::AddVerifiedSourceToPlaylist(std::int64_t playlistId,
   duplicate.Text(2, hash);
   if (duplicate.Next())
     return AddTrackResult::Duplicate;
-  Statement count(_db,
-                  "SELECT COUNT(*) FROM playlist_entries WHERE playlist_id=?");
-  count.Number(1, playlistId);
-  count.Next();
-  if (count.Number(0) >= PLAYLIST_TRACK_LIMIT)
-    return AddTrackResult::PlaylistFull;
+  Statement playlist(_db,
+                     "SELECT system_key IS NULL FROM playlists WHERE id=?");
+  playlist.Number(1, playlistId);
+  if (!playlist.Next())
+    throw std::runtime_error("Playlist no longer exists");
+  if (playlist.Number(0) != 0) {
+    Statement count(
+        _db, "SELECT COUNT(*) FROM playlist_entries WHERE playlist_id=?");
+    count.Number(1, playlistId);
+    count.Next();
+    if (count.Number(0) >= PLAYLIST_TRACK_LIMIT)
+      return AddTrackResult::PlaylistFull;
+  }
 
   Transaction transaction(_db);
   Statement upsert(
@@ -776,7 +837,9 @@ bool LocalStore::trimCache(std::uint64_t target) {
     const bool exists = !path.empty() && std::filesystem::exists(path, error);
     if (error || (exists && total <= target))
       continue;
-    auto exclusive = exists ? lockFile(path, LOCK_EX) : nullptr;
+    auto exclusive = exists
+                         ? lockFile(path, platform::FileLockMode::Exclusive)
+                         : nullptr;
     if (exists && !exclusive)
       continue;
     if (exists && !std::filesystem::remove(path, error))
@@ -823,7 +886,7 @@ LocalStore::StoreAudio(const std::string &source,
   if (!stale.empty()) {
     const auto path = cachePath(stale);
     if (!path.empty() && std::filesystem::exists(path)) {
-      auto exclusive = lockFile(path, LOCK_EX);
+      auto exclusive = lockFile(path, platform::FileLockMode::Exclusive);
       if (!exclusive) {
         transaction.Commit();
         return std::nullopt;
@@ -839,16 +902,9 @@ LocalStore::StoreAudio(const std::string &source,
     transaction.Commit();
     return std::nullopt;
   }
-  std::string pattern = (_cacheDirectory / "audio-XXXXXX").string();
-  const int descriptor = mkstemp(pattern.data());
-  if (descriptor < 0)
-    throw std::runtime_error("Could not create an audio cache file");
-  auto lease = std::make_shared<CacheLease>(descriptor);
-  fcntl(descriptor, F_SETFD, FD_CLOEXEC);
-  if (flock(descriptor, LOCK_SH) != 0) {
-    std::filesystem::remove(pattern);
-    throw std::runtime_error("Could not lock an audio cache file");
-  }
+  auto lockedFile = platform::CurrentPlatform().Files().CreateLockedFile(
+      _cacheDirectory, "audio");
+  const auto &pattern = lockedFile.path;
   try {
     std::filesystem::copy_file(
         file, pattern, std::filesystem::copy_options::overwrite_existing);
@@ -871,7 +927,7 @@ LocalStore::StoreAudio(const std::string &source,
     return CachedAudio{pattern,
                        canonicalSource.empty() ? source : canonicalSource,
                        title,
-                       std::move(lease)};
+                       std::move(lockedFile.lease)};
   } catch (...) {
     std::error_code error;
     std::filesystem::remove(pattern, error);

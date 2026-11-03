@@ -13,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+#include "../Platform/Services.hpp"
+
 struct sqlite3;
 
 namespace termify::core {
@@ -29,6 +31,7 @@ struct Playlist {
   std::string name;
   bool shuffle{false};
   bool loop{false};
+  bool fixed{false};
   std::size_t trackCount{0};
 };
 
@@ -49,15 +52,9 @@ enum class AddTrackResult {
   PlaylistFull,
 };
 
-// Shared by the queue and decoder. An advisory lock prevents eviction while
+// Shared by the queue and decoder. The platform lease prevents eviction while
 // any Termify process still has this cached file queued or playing.
-struct CacheLease {
-  explicit CacheLease(int descriptor) : fd(descriptor) {}
-  ~CacheLease();
-  CacheLease(const CacheLease &) = delete;
-  CacheLease &operator=(const CacheLease &) = delete;
-  int fd;
-};
+using CacheLease = platform::FileLease;
 
 struct CachedAudio {
   std::string path;
@@ -105,6 +102,9 @@ public:
   bool DeletePlaylist(std::int64_t playlistId);
   bool SetPlaylistShuffle(std::int64_t playlistId, bool enabled);
   bool SetPlaylistLoop(std::int64_t playlistId, bool enabled);
+  bool IsLiked(const std::string &source);
+  AddTrackResult Like(const HistoryEntry &track);
+  bool Unlike(const std::string &source);
   AddTrackResult AddHistoryToPlaylist(std::int64_t playlistId,
                                       std::int64_t historyId);
   AddTrackResult AddSourceToPlaylist(std::int64_t playlistId,
@@ -120,6 +120,7 @@ public:
   std::uint64_t Revision() const { return _revision.load(); }
 
 private:
+  std::int64_t likedPlaylistId();
   std::optional<CachedAudio> findAudio(const std::string &source);
   bool trimCache(std::uint64_t target);
   std::filesystem::path cachePath(const std::string &filename) const;

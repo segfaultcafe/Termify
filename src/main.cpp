@@ -1,12 +1,10 @@
 #include "App/Application.hpp"
-#include <csignal>
+#include "Platform/Services.hpp"
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 
 namespace {
-void handleInterrupt(int) {}
-
 void printHelp() {
   std::cout
       << "Usage: termify [OPTION]\n"
@@ -39,10 +37,7 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  struct sigaction action{};
-  action.sa_handler = handleInterrupt;
-  sigemptyset(&action.sa_mask);
-  sigaction(SIGINT, &action, nullptr);
+  termify::platform::CurrentPlatform().InstallInterruptHandler();
 
   try {
     termify::app::Application app;

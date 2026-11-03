@@ -17,6 +17,11 @@ Termify's supported-release goals and current milestones are documented in
 [ROADMAP.md](ROADMAP.md). User-facing TUI changes should also follow
 [docs/TUI.md](docs/TUI.md).
 
+Operating-system work must follow [docs/PLATFORM.md](docs/PLATFORM.md). Keep
+native APIs below `src/Platform`; application, Core, and TUI code depend on the
+platform capability interfaces and must not select an OS with preprocessor
+macros.
+
 ## Development setup
 
 Termify currently targets Linux and requires:
@@ -49,6 +54,14 @@ make run        # run the Debug build
 make test       # rebuild and run all tests with failure output
 make clean      # remove the Debug build directory
 make package    # build and verify a release archive and checksum
+```
+
+The pull-request integration matrix also builds and starts Termify in Arch,
+Debian, and Ubuntu containers and on native macOS `x86_64` and `arm64` runners.
+Run one Linux image locally with, for example:
+
+```bash
+docker build -f docker/ci/arch.Dockerfile -t termify-ci:arch .
 ```
 
 Do not use `make install` during ordinary development: it installs a tested

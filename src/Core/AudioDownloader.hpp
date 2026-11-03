@@ -61,7 +61,6 @@ private:
     std::chrono::steady_clock::time_point lastUsed;
   };
 
-  std::filesystem::path getGlobalLocation();
   std::filesystem::path getYtDlpLocation();
 
 private:

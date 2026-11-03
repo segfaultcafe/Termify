@@ -38,6 +38,7 @@ private:
   void cancelPlaylistPrompt();
   void addHistorySelection();
   void addCurrentTrack();
+  void toggleCurrentLike();
   void removePlaylistTrack();
   void movePlaylistTrack(int direction);
   void playSelectedPlaylist();
@@ -47,8 +48,8 @@ private:
   std::optional<core::Playlist> selectedPlaylist();
   string buildWaveform(std::size_t width);
   static string formatDuration(uint64 frames);
-  static int terminalWidth();
-  static int terminalHeight();
+  int terminalWidth() const;
+  int terminalHeight() const;
 
   core::PlaybackContext _playbackCtx;
   core::RingBufferContext _ringBufferCtx;
@@ -127,6 +128,7 @@ private:
   tui::Button *_playerPlayPause{nullptr};
   tui::Button *_playerNext{nullptr};
   tui::Button *_playerStop{nullptr};
+  tui::Button *_playerLike{nullptr};
   tui::Button *_playerAddPlaylist{nullptr};
   tui::Button *_playerRepeat{nullptr};
   tui::Knob *_playerVolume{nullptr};
@@ -138,6 +140,9 @@ private:
   tui::Label *_status{nullptr};
   tui::Label *_help{nullptr};
   tui::TextInput *_input{nullptr};
+  string _likedSource;
+  std::uint64_t _likedRevision{0};
+  bool _currentTrackLiked{false};
   std::mutex _widgetMtx;
   string _statusMessage{"Ready. Add a track with: play <song name>"};
   bool _statusIsError{false};

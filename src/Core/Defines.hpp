@@ -2,7 +2,6 @@
 #define _TERMIFY_CORE_DEFINES_HPP
 
 #include <algorithm>
-#include <alsa/asoundlib.h>
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -19,15 +18,6 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include <thread>
-
-extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/channel_layout.h>
-#include <libavutil/opt.h>
-#include <libswresample/swresample.h>
-}
 
 // Unsigned aliases
 using uint64 = uint64_t;
