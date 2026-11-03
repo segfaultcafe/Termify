@@ -6,7 +6,8 @@ namespace termify::core {
 
 FFmpegDecoder::FFmpegDecoder(AtomicContext &ctx) : _ctx(ctx) {}
 
-void FFmpegDecoder::Stream(const string &source, const string &displayName) {
+void FFmpegDecoder::Stream(const string &source, const string &displayName,
+                           platform::AudioOutput &output) {
   if (_ctx.playbackCtx->shouldStop.load())
     return;
 
@@ -19,7 +20,6 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
   _ctx.playbackCtx->historyRecorded.store(false);
 
   AVCodecContext *codecCtx = nullptr;
-  std::unique_ptr<platform::AudioOutput> output;
   AVPacket *packet = nullptr;
   AVFrame *frame = nullptr;
   uint8_t *outputBuffer = nullptr;
@@ -36,7 +36,6 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
     swr_free(&_swr);
     avcodec_free_context(&codecCtx);
     avformat_close_input(&_fmtCtx);
-    output.reset();
   };
 
   try {
@@ -48,9 +47,6 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
     publishStreamInfo(displayName, streamIndex);
     _ctx.playbackCtx->isLoading.store(false);
     resampleStereo(codecCtx);
-    output = platform::CurrentPlatform().CreateAudioOutput(
-        {.sampleRate = 44100, .channels = _ctx.ringBufferCtx->CHANNELS});
-
     packet = av_packet_alloc();
     frame = av_frame_alloc();
     constexpr uint64 BUFFER_CAPACITY = 192000;
@@ -60,8 +56,11 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
     }
 
     consumer = std::thread([&] {
-      worker(*output);
-      outputFinished.store(true);
+      worker(output);
+      {
+        std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+        outputFinished.store(true);
+      }
       _ctx.ringBufferCtx->ringCv.notify_all();
     });
     decodeResample(codecCtx, packet, frame, streamIndex, BUFFER_CAPACITY,
@@ -72,7 +71,10 @@ void FFmpegDecoder::Stream(const string &source, const string &displayName) {
     const bool cancellationRequested =
         _ctx.playbackCtx->shouldStop.load();
     _ctx.playbackCtx->shouldStop.store(true);
-    _ctx.ringBufferCtx->decodeFinished.store(true);
+    {
+      std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+      _ctx.ringBufferCtx->decodeFinished.store(true);
+    }
     _ctx.ringBufferCtx->ringCv.notify_all();
     _ctx.playbackCtx->pauseCv.notify_all();
     cleanup();
@@ -169,7 +171,10 @@ void FFmpegDecoder::decodeResample(AVCodecContext *codecCtx, AVPacket *pkt,
     if (applyPendingSeek(codecCtx, streamIndex, pkt, frame))
       continue;
     if (av_read_frame(_fmtCtx, pkt) < 0) {
-      _ctx.ringBufferCtx->decodeFinished.store(true);
+      {
+        std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+        _ctx.ringBufferCtx->decodeFinished.store(true);
+      }
       _ctx.ringBufferCtx->ringCv.notify_all();
       std::unique_lock lock(_ctx.ringBufferCtx->ringMtx);
       _ctx.ringBufferCtx->ringCv.wait(lock, [&] {
@@ -236,7 +241,10 @@ void FFmpegDecoder::decodeResample(AVCodecContext *codecCtx, AVPacket *pkt,
   }
 
   // signal end
-  _ctx.ringBufferCtx->decodeFinished.store(true);
+  {
+    std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+    _ctx.ringBufferCtx->decodeFinished.store(true);
+  }
   _ctx.ringBufferCtx->ringCv.notify_all();
 }
 
@@ -245,13 +253,19 @@ bool FFmpegDecoder::applyPendingSeek(AVCodecContext *codecCtx, int streamIndex,
   const auto target = _ctx.playbackCtx->seekTargetFrames.exchange(-1);
   if (target < 0)
     return false;
-  _ctx.ringBufferCtx->decodeFinished.store(false);
+  {
+    std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+    _ctx.ringBufferCtx->decodeFinished.store(false);
+  }
   const AVRational frames{1, 44100};
   const auto timestamp = av_rescale_q(target, frames,
                                       _fmtCtx->streams[streamIndex]->time_base);
   if (av_seek_frame(_fmtCtx, streamIndex, timestamp, AVSEEK_FLAG_BACKWARD) <
       0) {
-    _ctx.ringBufferCtx->decodeFinished.store(true);
+    {
+      std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+      _ctx.ringBufferCtx->decodeFinished.store(true);
+    }
     _ctx.ringBufferCtx->ringCv.notify_all();
     return false;
   }

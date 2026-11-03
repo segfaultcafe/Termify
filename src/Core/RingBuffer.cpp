@@ -143,6 +143,8 @@ void RingBuffer::Update(AtomicContext &ctx, platform::AudioOutput &output) {
       resetDevice();
     }
   }
+  if (!playbackCtx->shouldStop.load())
+    output.Drain(&playbackCtx->shouldStop);
 }
 
 } // namespace termify::core

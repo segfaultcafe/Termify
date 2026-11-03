@@ -105,6 +105,7 @@ public:
   virtual void Reset() = 0;
   virtual std::size_t WriteFrames(const std::int16_t *samples,
                                   std::size_t frames) = 0;
+  virtual void Drain(const std::atomic_bool *cancel) = 0;
 };
 
 class PlatformServices {

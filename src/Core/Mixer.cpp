@@ -481,9 +481,12 @@ bool Mixer::SeekToFraction(double fraction, bool announce) {
 bool Mixer::requestSeek(uint64 targetFrames, bool announce) {
   const uint64 duration = _ctx.playbackCtx->durationFrames.load();
   targetFrames = std::min(targetFrames, duration);
-  _ctx.ringBufferCtx->decodeFinished.store(false);
-  _ctx.playbackCtx->seekTargetFrames.store(
-      static_cast<std::int64_t>(targetFrames));
+  {
+    std::lock_guard lock(_ctx.ringBufferCtx->ringMtx);
+    _ctx.ringBufferCtx->decodeFinished.store(false);
+    _ctx.playbackCtx->seekTargetFrames.store(
+        static_cast<std::int64_t>(targetFrames));
+  }
   _ctx.ringBufferCtx->ringCv.notify_all();
   _ctx.playbackCtx->pauseCv.notify_all();
   if (announce)
@@ -647,12 +650,14 @@ void Mixer::startNext() {
           _trackName = preparedSong.title;
         _ctx.source = _trackSource;
       }
+      auto output = platform::CurrentPlatform().CreateAudioOutput(
+          {.sampleRate = 44100, .channels = _ctx.ringBufferCtx->CHANNELS});
       do {
         FFmpegDecoder decoder(_ctx);
         const string decoderName = preparedSong.title.empty()
                                        ? preparedSong.query
                                        : preparedSong.title;
-        decoder.Stream(preparedSong.preparedPath, decoderName);
+        decoder.Stream(preparedSong.preparedPath, decoderName, *output);
       } while (_repeatSong.load() && !_ctx.playbackCtx->shouldStop.load());
     } catch (const std::exception &error) {
       failed = !_ctx.playbackCtx->shouldStop.load();

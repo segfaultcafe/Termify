@@ -41,9 +41,9 @@ audio, packaging, and integration belong in `src/Platform/MacOS`.
    tests for the new implementations.
 
 The macOS port targets both Intel (`x86_64`, also called AMD64) and Apple
-Silicon (`arm64`). The initial implementation should use the shared POSIX
-process and terminal capabilities, provide macOS filesystem conventions and
-executable discovery, and add a native Core Audio output implementation.
+Silicon (`arm64`). It uses the shared POSIX process and terminal capabilities,
+macOS filesystem conventions and executable discovery, and a native Core Audio
+output implementation.
 
 Windows remains a later target. Its implementation can satisfy the same
 interfaces without emulating POSIX or changing Core code.
@@ -56,6 +56,10 @@ be represented by a Linux container, so CI uses native GitHub-hosted machines:
 
 - `macos-15-intel` validates the `x86_64`/AMD64 build.
 - `macos-15` validates the Apple Silicon `arm64` build.
+
+After integration succeeds, the package matrix builds a native archive on each
+release architecture, verifies its SHA-256 checksum, installs it into a clean
+prefix, and executes Termify and the bundled platform-specific yt-dlp.
 
 The startup smoke test runs the real non-interactive application, feeds it the
 `exit` command, and requires a clean exit. This covers platform composition,

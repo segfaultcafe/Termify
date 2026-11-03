@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(termify VERSION 0.6.1 LANGUAGES C CXX)
+project(termify VERSION 0.7.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -125,4 +125,16 @@ if(BUILD_TESTING)
     PkgConfig::FFMPEG termify_platform)
   target_compile_options(mixer_order_tests PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME mixer_order COMMAND mixer_order_tests)
+
+  add_executable(repeat_playback_tests tests/RepeatPlaybackTests.cpp
+    src/Core/Mixer.cpp src/Core/SongQueue.cpp src/Core/AudioDownloader.cpp
+    src/Core/LocalStore.cpp src/Core/SourceHash.cpp src/Core/FFmpegDecoder.cpp
+    src/Core/RingBuffer.cpp)
+  target_include_directories(repeat_playback_tests PRIVATE src)
+  target_link_libraries(repeat_playback_tests PRIVATE
+    ${TERMIFY_SQLITE_TARGET} PkgConfig::FFMPEG)
+  target_compile_options(repeat_playback_tests PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME repeat_playback COMMAND repeat_playback_tests)
+  set_tests_properties(repeat_playback PROPERTIES TIMEOUT 15)
 endif()

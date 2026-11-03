@@ -5,13 +5,12 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(sed -n 's/^project(termify VERSION \([^ ]*\).*/\1/p' \
   "$PROJECT_DIR/CMakeLists.txt")"
 ARCH="$(uname -m)"
-PACKAGE_DIR="$PROJECT_DIR/dist/termify-v${VERSION}-linux-${ARCH}"
+case "$(uname -s)" in
+Linux) PLATFORM="linux" ;;
+Darwin) PLATFORM="macos" ;;
+*) echo "Unsupported release platform: $(uname -s)" >&2; exit 1 ;;
+esac
+PACKAGE_DIR="$PROJECT_DIR/dist/termify-v${VERSION}-${PLATFORM}-${ARCH}"
 
 "$PROJECT_DIR/scripts/package-release.sh"
-sudo install -Dm755 "$PACKAGE_DIR/termify" /usr/local/bin/termify
-sudo install -Dm755 "$PACKAGE_DIR/yt-dlp" \
-  /usr/local/lib/termify/yt-dlp
-
-echo "Installed Termify to /usr/local/bin/termify"
-echo "Installed embedded yt-dlp to /usr/local/lib/termify/yt-dlp"
-echo "No Python or separate yt-dlp installation is required."
+sudo "$PACKAGE_DIR/install.sh" /usr/local

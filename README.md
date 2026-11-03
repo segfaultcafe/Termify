@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  A focused terminal audio player for Linux, built with modern C++, FFmpeg,
-  ALSA, and an included standalone yt-dlp.
+  A focused terminal audio player for Linux and macOS, built with modern C++,
+  FFmpeg, native audio backends, and an included standalone yt-dlp.
 </p>
 
 ## Highlights
@@ -51,39 +51,67 @@ existing help row remains uncluttered.
 
 **v0.7.0** adds a `♡ LIKE` / `♥ LIKED` toggle to Player and a permanent
 **Liked Songs** playlist. The playlist can be played and reordered like any
-other playlist, but cannot be renamed or deleted.
+other playlist, but cannot be renamed or deleted. Track repeat now keeps one
+native audio session, drains its final buffered frames, and synchronizes the
+end-of-stream handoff so long-running repeat sessions do not stall at the end.
 
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
 
-The latest packaged release is **v0.6.1**.
+The latest packaged release is **v0.7.0**.
 
-## Install the Linux release
+## Install a release
 
-Download `termify-v0.6.1-linux-x86_64.tar.gz` and its checksum from the
-[v0.6.1 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.6.1).
+Release archives include Termify plus the verified official standalone
+`yt-dlp` 2026.10.26 executable. Python and a separate yt-dlp installation are
+not required.
+
+### Linux x86_64
+
+Download `termify-v0.7.0-linux-x86_64.tar.gz` and its checksum from the
+[v0.7.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.7.0).
 
 ```bash
-sha256sum -c termify-v0.6.1-linux-x86_64.tar.gz.sha256
-tar -xzf termify-v0.6.1-linux-x86_64.tar.gz
-cd termify-v0.6.1-linux-x86_64
+sha256sum -c termify-v0.7.0-linux-x86_64.tar.gz.sha256
+tar -xzf termify-v0.7.0-linux-x86_64.tar.gz
+cd termify-v0.7.0-linux-x86_64
 ./install.sh
 ```
 
-The installer places `termify` in `~/.local/bin` by default. You can also pass
-an installation prefix explicitly. For a system-wide installation:
+### macOS Apple Silicon and Intel
+
+Install the runtime libraries with Homebrew, then download the archive matching
+`uname -m`: `macos-arm64` for Apple Silicon or `macos-x86_64` for Intel.
+
+```bash
+brew install ffmpeg sqlite
+shasum -a 256 -c termify-v0.7.0-macos-arm64.tar.gz.sha256
+tar -xzf termify-v0.7.0-macos-arm64.tar.gz
+cd termify-v0.7.0-macos-arm64
+./install.sh
+```
+
+Replace `arm64` with `x86_64` in those commands on an Intel Mac.
+
+The v0.7.0 macOS archives are not code-signed or notarized. If macOS prevents
+the downloaded binary from opening, build Termify from source using the
+instructions below. Signed and notarized distribution remains future work.
+
+### Installer behavior
+
+On both platforms, the installer places `termify` in `~/.local/bin` by
+default. You can also pass an installation prefix explicitly. For a system-wide
+installation:
 
 ```bash
 sudo ./install.sh /usr/local
 ```
 
-The archive includes the official standalone `yt-dlp` 2026.10.26 executable.
 The installer normally keeps it private in `~/.local/lib/termify`, so it does
 not replace or interfere with a system installation. If that directory is not
 writable, it safely falls back to placing yt-dlp beside the Termify executable.
-Python and a separate yt-dlp install are not required.
 
-### Distribution setup
+### Linux distribution setup
 
 Termify uses FFmpeg libraries for decoding, ALSA for audio output, and SQLite
 for local storage. Install those runtime dependencies before running the
@@ -119,7 +147,7 @@ sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The v0.6.1 prebuilt binary is produced on x86_64 Arch Linux and expects
+above. The v0.7.0 prebuilt binary is produced on x86_64 Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
 `libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
 `libasound.so.2`. It is tested on the build host, not certified across all
@@ -214,7 +242,7 @@ next
   pending work, and closes Termify through the same clean shutdown path as the
   `quit` command.
 - The frame title shows the build version, for example
-  `TERMIFY - terminal audio player - v0.6.1`.
+  `TERMIFY - terminal audio player - v0.7.0`.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
 - **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
   bar is focused; **Esc** returns to the command prompt.
@@ -328,15 +356,21 @@ again when the playlist is played.
 
 Requirements:
 
-- Linux with PipeWire or an ALSA-compatible playback device
+- Linux with PipeWire or an ALSA-compatible playback device, or macOS 15
 - CMake 3.16 or newer
 - A C++23-capable compiler
 - `pkg-config`
 - FFmpeg development libraries: `libavformat`, `libavcodec`, `libavutil`, and
   `libswresample`
-- ALSA development libraries
+- ALSA development libraries on Linux; Core Audio is provided by macOS
 - SQLite3 development libraries (no database service is needed)
-- `curl` and `sha256sum` to fetch and verify the bundled downloader
+- `curl` and either `sha256sum` or `shasum` to verify the bundled downloader
+
+On macOS, install the build dependencies first:
+
+```bash
+brew install cmake ffmpeg ninja pkg-config sqlite
+```
 
 ```bash
 git clone https://github.com/segfaultcafe/Termify.git
@@ -349,7 +383,7 @@ make run
 
 ```bash
 make test       # rebuild and run the test suite
-make package    # create the tested Linux release archive and checksum
+make package    # create a tested native release archive and checksum
 make install    # build, test, and install to /usr/local/bin
 ```
 
@@ -365,11 +399,11 @@ components.
 
 ## Platform status
 
-Termify currently supports Linux. The v0.7.0 milestone ports Termify to macOS
-with a native audio backend, platform-specific terminal and process handling,
-verified bundled yt-dlp builds, and Apple Silicon and Intel CI coverage.
-Windows remains a post-1.0 target. The decoder, queue, metadata, progress, and
-playback state are already portable.
+Termify supports Linux x86_64 plus macOS 15 on Apple Silicon and Intel. Linux
+uses ALSA and macOS uses Core Audio; both share the portable decoder, queue,
+metadata, progress, and playback state. Native CI builds, tests, starts, and
+packages every supported release architecture. Windows remains a post-1.0
+target.
 
 OS integrations are composed from narrow process, filesystem, terminal, and
 audio interfaces. See [docs/PLATFORM.md](docs/PLATFORM.md) for the boundary and

@@ -2,6 +2,7 @@
 
 #include <alsa/asoundlib.h>
 #include <array>
+#include <cerrno>
 #include <stdexcept>
 #include <unistd.h>
 
@@ -66,6 +67,24 @@ public:
       written = snd_pcm_writei(_device, samples, frames);
     }
     return written > 0 ? static_cast<std::size_t>(written) : 0;
+  }
+
+  void Drain(const std::atomic_bool *cancel) override {
+    if (snd_pcm_nonblock(_device, 1) < 0)
+      throw std::runtime_error("Could not drain the ALSA playback device");
+
+    int result = 0;
+    while ((result = snd_pcm_drain(_device)) == -EAGAIN) {
+      if (cancel && cancel->load()) {
+        snd_pcm_drop(_device);
+        result = 0;
+        break;
+      }
+      snd_pcm_wait(_device, 50);
+    }
+    snd_pcm_nonblock(_device, 0);
+    if (result < 0 || snd_pcm_prepare(_device) < 0)
+      throw std::runtime_error("Could not drain the ALSA playback device");
   }
 
 private:
