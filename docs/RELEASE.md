@@ -53,8 +53,9 @@ GitHub release notes.
 
 - Watch the **Release** workflow. It independently builds, tests, packages,
   installs, and checks `--version` for Linux x86_64 and both macOS
-  architectures. It also requires the bundled yt-dlp to report the pinned
-  version.
+  architectures. The Linux archive is produced in an Arch Linux container to
+  preserve the documented FFmpeg ABI contract. Every package also requires the
+  bundled yt-dlp to report the pinned version.
 - The workflow creates keyless Sigstore-backed GitHub artifact attestations for
   every archive, per-archive checksum, and the aggregate `SHA256SUMS` manifest.
 - Publishing is draft-first. The complete asset set is uploaded to a draft and

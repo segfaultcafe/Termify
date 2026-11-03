@@ -168,7 +168,7 @@ sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The v0.7.0 prebuilt binary is produced on x86_64 Arch Linux and expects
+above. The automated Linux archive is produced on x86_64 Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
 `libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
 `libasound.so.2`. It is tested on the build host, not certified across all

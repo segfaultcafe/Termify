@@ -16,6 +16,7 @@ jobs:
   validate:
     name: Validate release tag
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,8 +38,60 @@ jobs:
           "$EVENT_SHA"
           refs/remotes/origin/master
 
-  package:
-    name: Package (${{ matrix.platform }} ${{ matrix.architecture }})
+  package-linux:
+    name: Package (linux x86_64)
+    needs: validate
+    runs-on: ubuntu-24.04
+    container: archlinux:base
+    timeout-minutes: 30
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify native architecture
+        run: test "$(uname -m)" = x86_64
+
+      - name: Install Arch Linux build dependencies
+        run: |
+          pacman -Syu --needed --noconfirm \
+            alsa-lib \
+            base-devel \
+            cmake \
+            curl \
+            ffmpeg \
+            pkgconf \
+            sqlite
+
+      - name: Build and test release package
+        run: make package
+
+      - name: Verify archive, installer, and bundled executables
+        run: scripts/verify-release-package.sh linux x86_64
+
+      - name: Attest package and checksum
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: termify-release-linux-x86_64
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  package-macos:
+    name: Package (macos ${{ matrix.architecture }})
     needs: validate
     permissions:
       artifact-metadata: write
@@ -49,16 +102,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: linux
-            architecture: x86_64
-            runner: ubuntu-24.04
-          - platform: macos
-            architecture: x86_64
+          - architecture: x86_64
             runner: macos-15-intel
-          - platform: macos
-            architecture: arm64
+          - architecture: arm64
             runner: macos-15
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,25 +115,7 @@ jobs:
       - name: Verify native architecture
         run: test "$(uname -m)" = "${{ matrix.architecture }}"
 
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            cmake \
-            curl \
-            g++ \
-            libasound2-dev \
-            libavcodec-dev \
-            libavformat-dev \
-            libavutil-dev \
-            libsqlite3-dev \
-            libswresample-dev \
-            make \
-            pkg-config
-
-      - name: Install macOS build dependencies
-        if: runner.os == 'macOS'
+      - name: Install build dependencies
         run: brew install cmake ffmpeg ninja pkg-config sqlite
 
       - name: Build and test release package
@@ -93,7 +124,7 @@ jobs:
       - name: Verify archive, installer, and bundled executables
         run: >-
           scripts/verify-release-package.sh
-          "${{ matrix.platform }}"
+          macos
           "${{ matrix.architecture }}"
 
       - name: Attest package and checksum
@@ -106,7 +137,7 @@ jobs:
       - name: Upload verified release assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: termify-release-${{ matrix.platform }}-${{ matrix.architecture }}
+          name: termify-release-macos-${{ matrix.architecture }}
           path: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
@@ -115,8 +146,9 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    needs: [validate, package]
+    needs: [validate, package-linux, package-macos]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       artifact-metadata: write
       attestations: write
