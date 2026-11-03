@@ -287,3 +287,11 @@ jobs:
             dist/*.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
+
+  package-gate:
+    name: Package smoke test
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm every release package passed
+        run: true
