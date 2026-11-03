@@ -111,6 +111,27 @@ The installer normally keeps it private in `~/.local/lib/termify`, so it does
 not replace or interfere with a system installation. If that directory is not
 writable, it safely falls back to placing yt-dlp beside the Termify executable.
 
+### Verify an automated release
+
+Starting with the v0.8 release pipeline, stable tags build and publish all
+native archives automatically. Each archive, checksum file, and aggregate
+`SHA256SUMS` manifest receives keyless GitHub/Sigstore provenance. Verify the
+manifest before trusting its digests:
+
+```bash
+TAG=v0.8.0
+gh attestation verify SHA256SUMS \
+  --repo segfaultcafe/Termify \
+  --signer-workflow segfaultcafe/Termify/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG"
+sha256sum --check SHA256SUMS
+```
+
+Use `shasum -a 256 -c SHA256SUMS` for the final command on macOS. You can also
+pass a downloaded archive to `gh attestation verify` with the same identity
+flags. See [docs/RELEASE.md](docs/RELEASE.md) for the complete verification
+procedure and trust model.
+
 ### Linux distribution setup
 
 Termify uses FFmpeg libraries for decoding, ALSA for audio output, and SQLite
@@ -147,7 +168,7 @@ sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The v0.7.0 prebuilt binary is produced on x86_64 Arch Linux and expects
+above. The automated Linux archive is produced on x86_64 Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
 `libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
 `libasound.so.2`. It is tested on the build host, not certified across all
@@ -392,6 +413,10 @@ release and verify its SHA-256 digest. The first build downloads it into the
 project cache; subsequent builds reuse the verified copy without network access.
 Python and a separate yt-dlp installation are not required. The build reports
 the bundled downloader version so an outdated copy is easy to spot.
+
+Pushing a stable version tag invokes the automated native release pipeline;
+ordinary source builds and the manual `make package` target keep the same
+behavior. Maintainer instructions are in [docs/RELEASE.md](docs/RELEASE.md).
 
 The terminal interface is composed from reusable, keyboard- and mouse-aware
 widgets. See [docs/TUI.md](docs/TUI.md) before adding or changing interface

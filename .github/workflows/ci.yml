@@ -35,6 +35,8 @@ jobs:
           fi
           find scripts -type f -name '*.sh' -print0 |
             xargs -0 -n1 bash -n
+          bash -n tests/ReleaseAutomationTests.sh
+          tests/ReleaseAutomationTests.sh
 
   build:
     name: Build and test (${{ matrix.toolchain.name }})
@@ -263,20 +265,10 @@ jobs:
         run: make package
 
       - name: Verify archive, installer, and staged executables
-        run: |
-          source scripts/yt-dlp.sh
-          version="$(sed -n 's/^project(termify VERSION \([^ ]*\).*/\1/p' CMakeLists.txt)"
-          package="termify-v${version}-${{ matrix.platform }}-$(uname -m)"
-          archive="dist/${package}.tar.gz"
-          checksum="${archive}.sha256"
-          expected="$(awk '{print $1}' "$checksum")"
-          termify_verify_sha256 "$expected" "$archive"
-          test "$(dist/${package}/termify --version)" = "termify ${version}"
-          test -n "$(dist/${package}/yt-dlp --version)"
-          prefix="$RUNNER_TEMP/termify-install"
-          "dist/${package}/install.sh" "$prefix"
-          test "$("$prefix/bin/termify" --version)" = "termify ${version}"
-          test -n "$("$prefix/lib/termify/yt-dlp" --version)"
+        run: >-
+          scripts/verify-release-package.sh
+          "${{ matrix.platform }}"
+          "${{ matrix.architecture }}"
 
       - name: Upload release package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
