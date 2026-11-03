@@ -87,9 +87,11 @@ leaves the terminal or system in a broken state.
   backend; macOS terminal, process, filesystem, and executable discovery;
   verified native packages for Apple Silicon and Intel; and preserved Linux
   behavior.
-- **v0.8 — Distribution:** ship AppImage builds, add Linux ARM64, automate
-  releases, add verified update checks and rollback, and test packages on clean
-  supported distributions.
+- **v0.8 — Distribution (in progress):** publish native packages from validated
+  version tags with generated notes, complete package smoke checks, SHA-256
+  manifests, and keyless build provenance. Next, ship AppImage builds, add
+  Linux ARM64, add verified update checks and rollback, and test packages on
+  clean supported distributions.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a

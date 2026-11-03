@@ -1,0 +1,205 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the release branch
+        run: >-
+          git fetch --no-tags origin
+          +refs/heads/master:refs/remotes/origin/master
+
+      - name: Validate tag, version, commit, and branch
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          scripts/validate-release-tag.sh
+          "$RELEASE_TAG"
+          "$EVENT_SHA"
+          refs/remotes/origin/master
+
+  package:
+    name: Package (${{ matrix.platform }} ${{ matrix.architecture }})
+    needs: validate
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            architecture: x86_64
+            runner: ubuntu-24.04
+          - platform: macos
+            architecture: x86_64
+            runner: macos-15-intel
+          - platform: macos
+            architecture: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify native architecture
+        run: test "$(uname -m)" = "${{ matrix.architecture }}"
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            cmake \
+            curl \
+            g++ \
+            libasound2-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libsqlite3-dev \
+            libswresample-dev \
+            make \
+            pkg-config
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: brew install cmake ffmpeg ninja pkg-config sqlite
+
+      - name: Build and test release package
+        run: make package
+
+      - name: Verify archive, installer, and bundled executables
+        run: >-
+          scripts/verify-release-package.sh
+          "${{ matrix.platform }}"
+          "${{ matrix.architecture }}"
+
+      - name: Attest package and checksum
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: termify-release-${{ matrix.platform }}-${{ matrix.architecture }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub release
+    needs: [validate, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download verified packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: termify-release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Reject missing, extra, or duplicate release assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          platforms=(linux-x86_64 macos-x86_64 macos-arm64)
+          expected=0
+          for platform in "${platforms[@]}"; do
+            archive="release-assets/termify-v${version}-${platform}.tar.gz"
+            test -f "$archive"
+            test -f "$archive.sha256"
+            expected=$((expected + 2))
+          done
+          actual="$(find release-assets -maxdepth 1 -type f | wc -l)"
+          test "$actual" -eq "$expected"
+
+      - name: Verify collected checksums
+        run: |
+          source scripts/yt-dlp.sh
+          for checksum in release-assets/*.tar.gz.sha256; do
+            read -r digest filename extra <"$checksum"
+            test -z "${extra:-}"
+            test "$filename" = "$(basename "${checksum%.sha256}")"
+            termify_verify_sha256 "$digest" "release-assets/$filename"
+          done
+          LC_ALL=C sort -k2 release-assets/*.tar.gz.sha256 \
+            >release-assets/SHA256SUMS
+          (cd release-assets && sha256sum --check SHA256SUMS)
+
+      - name: Refuse to replace an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json id >/dev/null 2>&1; then
+            echo "A GitHub release already exists for $RELEASE_TAG." >&2
+            exit 1
+          fi
+
+      - name: Attest aggregate checksum manifest
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: release-assets/SHA256SUMS
+
+      - name: Create verified draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          notes="$(cat <<'EOF'
+          Native packages were built and tested automatically from this tag.
+          Every archive and checksum has keyless GitHub/Sigstore provenance;
+          see `docs/RELEASE.md` for checksum and attestation verification.
+
+          macOS packages are not yet code-signed or notarized.
+          EOF
+          )"
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --draft \
+            --fail-on-no-commits \
+            --generate-notes \
+            --notes "$notes" \
+            --title "Termify $RELEASE_TAG" \
+            --verify-tag
+
+      - name: Publish the complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest
