@@ -141,7 +141,6 @@ Application::Application() {
       &_widgets.Emplace<tui::Button>("player-play-pause", "|> PLAY");
   _playerNext = &_widgets.Emplace<tui::Button>("player-next", ">| NEXT");
   _playerStop = &_widgets.Emplace<tui::Button>("player-stop", "[] STOP");
-  _playerLike = &_widgets.Emplace<tui::Button>("player-like", "♡ LIKE");
   _playerRepeat =
       &_widgets.Emplace<tui::Button>("player-repeat", "↻ REPEAT OFF");
   _playerVolume = &_widgets.Emplace<tui::Knob>("player-volume");
@@ -149,6 +148,7 @@ Application::Application() {
   _queueList = &_widgets.Emplace<tui::ListView>("queue-list");
   _queueList->SetEmptyText("Queue is empty");
   _queueList->SetDoubleClickActivates(true);
+  _playerLike = &_widgets.Emplace<tui::Button>("player-like", "♡ LIKE");
   _playerAddPlaylist = &_widgets.Emplace<tui::Button>(
       "player-add-playlist", "ADD TO PLAYLIST");
   _waveformRule = &_widgets.Emplace<tui::Rule>("waveform-rule");
