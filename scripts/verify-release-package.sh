@@ -10,7 +10,7 @@ if (( $# != 2 )); then
 fi
 
 PLATFORM="$1"
-ARCHITECTURE="$2"
+ARCHITECTURE="$(termify_canonical_arch "$2")"
 VERSION="$(sed -n 's/^project(termify VERSION \([^ ]*\).*/\1/p' \
   "$PROJECT_DIR/CMakeLists.txt")"
 PACKAGE="termify-v${VERSION}-${PLATFORM}-${ARCHITECTURE}"
@@ -21,7 +21,7 @@ if [[ -z "$VERSION" || ! -f "$ARCHIVE" || ! -f "$CHECKSUM" ]]; then
   echo "The expected $PACKAGE archive and checksum were not produced." >&2
   exit 1
 fi
-if [[ "$(uname -m)" != "$ARCHITECTURE" ]]; then
+if ! termify_arch_matches_host "$ARCHITECTURE"; then
   echo "Cannot execute an $ARCHITECTURE package on $(uname -m)." >&2
   exit 1
 fi

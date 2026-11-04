@@ -9,14 +9,15 @@ if (( $# > 1 )); then
   exit 2
 fi
 
-ARCHITECTURE="${1:-x86_64}"
+ARCHITECTURE="$(termify_canonical_arch "${1:-x86_64}")"
 VERSION="$(sed -n 's/^project(termify VERSION \([^ ]*\).*/\1/p' \
   "$PROJECT_DIR/CMakeLists.txt")"
 NAME="termify-v${VERSION}-linux-${ARCHITECTURE}.AppImage"
 APPIMAGE="$PROJECT_DIR/dist/$NAME"
 CHECKSUM="$APPIMAGE.sha256"
 
-if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "$ARCHITECTURE" ]]; then
+if [[ "$(uname -s)" != "Linux" ]] || \
+  ! termify_arch_matches_host "$ARCHITECTURE"; then
   echo "Cannot verify a Linux $ARCHITECTURE AppImage on $(uname -s) $(uname -m)." >&2
   exit 1
 fi

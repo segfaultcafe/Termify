@@ -10,8 +10,7 @@ leaves the terminal or system in a broken state.
 
 ### Portable distribution
 
-- Provide a self-contained x86_64 AppImage, with Linux ARM64 as the next
-  target.
+- Provide self-contained x86_64 and ARM64 AppImages.
 - Provide tested macOS builds for Apple Silicon and Intel Macs with the
   downloader bundled and verified.
 - Require no Python or separately installed yt-dlp.
@@ -89,9 +88,9 @@ leaves the terminal or system in a broken state.
   behavior.
 - **v0.8 — Distribution (in progress):** publish native packages from validated
   version tags with generated notes, complete package smoke checks, SHA-256
-  manifests, keyless build provenance, and a self-contained Linux x86_64
-  AppImage. Next, add Linux ARM64, verified update checks and rollback, and
-  package tests on clean supported distributions.
+  manifests, keyless build provenance, and self-contained Linux x86_64 and
+  ARM64 AppImages. Next, add verified update checks and rollback, and package
+  tests on clean supported distributions.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a

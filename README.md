@@ -66,7 +66,7 @@ Release archives include Termify plus the verified official standalone
 `yt-dlp` 2026.10.26 executable. Python and a separate yt-dlp installation are
 not required.
 
-### Linux x86_64 AppImage (v0.8.0 and newer)
+### Linux x86_64 and ARM64 AppImage (v0.8.0 and newer)
 
 The AppImage is the portable Linux distribution. It bundles Termify, yt-dlp,
 FFmpeg, SQLite, ALSA's userspace library, and their non-system dependency
@@ -78,6 +78,9 @@ chmod +x termify-v0.8.0-linux-x86_64.AppImage
 ./termify-v0.8.0-linux-x86_64.AppImage
 ```
 
+On an ARM64 system, replace `x86_64` with `arm64`. Both architectures are
+built and started on native GitHub-hosted runners before publication.
+
 The host still supplies the Linux kernel, glibc, audio device, and ALSA driver
 configuration. The AppImage is built on Debian 12 to retain an older glibc
 baseline while providing the FFmpeg channel-layout API Termify requires. If
@@ -87,7 +90,7 @@ FUSE is unavailable, run it without mounting:
 APPIMAGE_EXTRACT_AND_RUN=1 ./termify-v0.8.0-linux-x86_64.AppImage
 ```
 
-### Linux x86_64 native archive
+### Linux x86_64 and ARM64 native archive
 
 Download `termify-v0.7.0-linux-x86_64.tar.gz` and its checksum from the
 [v0.7.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.7.0).
@@ -98,6 +101,10 @@ tar -xzf termify-v0.7.0-linux-x86_64.tar.gz
 cd termify-v0.7.0-linux-x86_64
 ./install.sh
 ```
+
+Starting with v0.8.0, ARM64 releases use the corresponding
+`termify-v0.8.0-linux-arm64.tar.gz` archive. The architecture name is `arm64`
+even though Linux may report the native machine as `aarch64`.
 
 ### macOS Apple Silicon and Intel
 
@@ -188,12 +195,14 @@ sudo zypper install ffmpeg libasound2 libsqlite3-0
 ```
 
 Then use the same checksum, extraction, and `./install.sh` commands shown
-above. The automated Linux archive is produced on x86_64 Arch Linux and expects
+above. The automated x86_64 Linux archive is produced on Arch Linux and expects
 FFmpeg 9 ABI libraries (`libavformat.so.63`, `libavcodec.so.63`,
 `libavutil.so.61`, and `libswresample.so.7`), plus `libsqlite3.so.0` and
-`libasound.so.2`. It is tested on the build host, not certified across all
-distributions. On distributions with an older FFmpeg ABI, use the source-build
-instructions below; the build
+`libasound.so.2`. The ARM64 archive is built on Ubuntu 24.04 ARM64 and links to
+that runner's native libraries. Archives are tested on their build hosts, not
+certified across all distributions. For broad Linux portability, prefer the
+matching AppImage. On distributions with a different FFmpeg ABI, use the
+source-build instructions below; the build
 will link against that distribution's native FFmpeg version.
 
 Alpine uses musl rather than glibc, and NixOS does not expose system libraries
@@ -425,7 +434,7 @@ make run
 ```bash
 make test       # rebuild and run the test suite
 make package    # create a tested native release archive and checksum
-make appimage   # create and test the self-contained Linux x86_64 AppImage
+make appimage   # create and test an AppImage for this Linux architecture
 make install    # build, test, and install to /usr/local/bin
 ```
 
@@ -445,11 +454,11 @@ components.
 
 ## Platform status
 
-Termify supports Linux x86_64 plus macOS 15 on Apple Silicon and Intel. Linux
-uses ALSA and macOS uses Core Audio; both share the portable decoder, queue,
-metadata, progress, and playback state. Native CI builds, tests, starts, and
-packages every supported release architecture. Windows remains a post-1.0
-target.
+Termify supports Linux x86_64 and ARM64 plus macOS 15 on Apple Silicon and
+Intel. Linux uses ALSA and macOS uses Core Audio; both share the portable
+decoder, queue, metadata, progress, and playback state. Native CI builds,
+tests, starts, and packages every supported release architecture. Windows
+remains a post-1.0 target.
 
 OS integrations are composed from narrow process, filesystem, terminal, and
 audio interfaces. See [docs/PLATFORM.md](docs/PLATFORM.md) for the boundary and

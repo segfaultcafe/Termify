@@ -226,6 +226,10 @@ jobs:
           - platform: linux
             architecture: x86_64
             runner: ubuntu-24.04
+          - platform: linux
+            architecture: arm64
+            native_architecture: aarch64
+            runner: ubuntu-24.04-arm
           - platform: macos
             architecture: x86_64
             runner: macos-15-intel
@@ -238,7 +242,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify native architecture
-        run: test "$(uname -m)" = "${{ matrix.architecture }}"
+        run: >-
+          test "$(uname -m)" =
+          "${{ matrix.native_architecture || matrix.architecture }}"
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -281,9 +287,17 @@ jobs:
           retention-days: 14
 
   appimage:
-    name: AppImage smoke test (linux x86_64)
+    name: AppImage smoke test (linux ${{ matrix.architecture }})
     needs: [hygiene, build, sanitizers, linux-containers, macos]
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     container: debian:12-slim
     timeout-minutes: 30
     steps:
@@ -314,12 +328,12 @@ jobs:
         run: make appimage
 
       - name: Verify checksum, dependency bundle, and startup
-        run: scripts/verify-appimage.sh x86_64
+        run: scripts/verify-appimage.sh "${{ matrix.architecture }}"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: termify-appimage-linux-x86_64
+          name: termify-appimage-linux-${{ matrix.architecture }}
           path: |
             dist/*.AppImage
             dist/*.AppImage.sha256
@@ -327,9 +341,17 @@ jobs:
           retention-days: 14
 
   appimage-portability:
-    name: AppImage portability (clean ubuntu 24.04)
+    name: AppImage portability (clean ubuntu 24.04 ${{ matrix.architecture }})
     needs: appimage
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     container: ubuntu:24.04
     timeout-minutes: 10
     steps:
@@ -339,13 +361,13 @@ jobs:
       - name: Download Debian-built AppImage
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: termify-appimage-linux-x86_64
+          name: termify-appimage-linux-${{ matrix.architecture }}
           path: dist
 
       - name: Prove the AppImage starts without host packages or FUSE
         run: |
           chmod 0755 dist/*.AppImage
-          scripts/verify-appimage.sh x86_64
+          scripts/verify-appimage.sh "${{ matrix.architecture }}"
 
   package-gate:
     name: Package smoke test

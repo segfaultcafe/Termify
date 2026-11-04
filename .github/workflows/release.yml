@@ -90,6 +90,62 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  package-linux-arm64:
+    name: Package (linux arm64)
+    needs: validate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify native architecture
+        run: test "$(uname -m)" = aarch64
+
+      - name: Install Ubuntu build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            cmake \
+            curl \
+            g++ \
+            libasound2-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libsqlite3-dev \
+            libswresample-dev \
+            make \
+            pkg-config
+
+      - name: Build and test release package
+        run: make package
+
+      - name: Verify archive, installer, and bundled executables
+        run: scripts/verify-release-package.sh linux arm64
+
+      - name: Attest package and checksum
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: termify-release-linux-arm64
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
   package-macos:
     name: Package (macos ${{ matrix.architecture }})
     needs: validate
@@ -145,9 +201,17 @@ jobs:
           retention-days: 14
 
   package-appimage:
-    name: Package (AppImage linux x86_64)
+    name: Package (AppImage linux ${{ matrix.architecture }})
     needs: validate
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     container: debian:12-slim
     timeout-minutes: 30
     permissions:
@@ -183,7 +247,7 @@ jobs:
         run: make appimage
 
       - name: Verify checksum, dependency bundle, and startup
-        run: scripts/verify-appimage.sh x86_64
+        run: scripts/verify-appimage.sh "${{ matrix.architecture }}"
 
       - name: Attest AppImage and checksum
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
@@ -195,7 +259,7 @@ jobs:
       - name: Upload verified AppImage assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: termify-release-appimage-linux-x86_64
+          name: termify-release-appimage-linux-${{ matrix.architecture }}
           path: |
             dist/*.AppImage
             dist/*.AppImage.sha256
@@ -203,9 +267,17 @@ jobs:
           retention-days: 14
 
   verify-appimage-portability:
-    name: Verify AppImage (clean ubuntu 24.04)
+    name: Verify AppImage (clean ubuntu 24.04 ${{ matrix.architecture }})
     needs: package-appimage
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     container: ubuntu:24.04
     timeout-minutes: 10
     steps:
@@ -215,17 +287,22 @@ jobs:
       - name: Download Debian-built AppImage
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: termify-release-appimage-linux-x86_64
+          name: termify-release-appimage-linux-${{ matrix.architecture }}
           path: dist
 
       - name: Prove the release AppImage starts without host packages or FUSE
         run: |
           chmod 0755 dist/*.AppImage
-          scripts/verify-appimage.sh x86_64
+          scripts/verify-appimage.sh "${{ matrix.architecture }}"
 
   publish:
     name: Publish GitHub release
-    needs: [validate, package-linux, package-macos, verify-appimage-portability]
+    needs:
+      - validate
+      - package-linux
+      - package-linux-arm64
+      - package-macos
+      - verify-appimage-portability
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -249,12 +326,15 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           version="${RELEASE_TAG#v}"
-          platforms=(linux-x86_64 macos-x86_64 macos-arm64)
+          platforms=(linux-x86_64 linux-arm64 macos-x86_64 macos-arm64)
           artifacts=()
           for platform in "${platforms[@]}"; do
             artifacts+=("termify-v${version}-${platform}.tar.gz")
           done
-          artifacts+=("termify-v${version}-linux-x86_64.AppImage")
+          artifacts+=(
+            "termify-v${version}-linux-x86_64.AppImage"
+            "termify-v${version}-linux-arm64.AppImage"
+          )
           for artifact in "${artifacts[@]}"; do
             test -f "release-assets/$artifact"
             test -f "release-assets/$artifact.sha256"
