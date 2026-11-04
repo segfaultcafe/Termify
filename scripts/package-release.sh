@@ -72,6 +72,7 @@ install_file 644 "$PROJECT_DIR/docs/TUI.md" "$STAGE_DIR/docs/TUI.md"
 install_file 644 "$PROJECT_DIR/docs/PLATFORM.md" \
   "$STAGE_DIR/docs/PLATFORM.md"
 install_file 644 "$PROJECT_DIR/docs/RELEASE.md" "$STAGE_DIR/docs/RELEASE.md"
+install_file 644 "$PROJECT_DIR/docs/UPDATES.md" "$STAGE_DIR/docs/UPDATES.md"
 
 if tar --version 2>/dev/null | grep -q 'GNU tar'; then
   tar --sort=name --owner=0 --group=0 --numeric-owner \

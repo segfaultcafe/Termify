@@ -14,6 +14,7 @@ public:
 
 class FileSystem : public platform::FileSystem {
 public:
+  std::filesystem::path TemporaryDirectory() const override;
   std::optional<std::filesystem::path>
   FindExecutable(const std::string &name,
                  const std::vector<std::filesystem::path> &preferred) const

@@ -170,6 +170,10 @@ std::optional<std::filesystem::path> FileSystem::FindExecutable(
   return std::nullopt;
 }
 
+std::filesystem::path FileSystem::TemporaryDirectory() const {
+  return std::filesystem::temp_directory_path();
+}
+
 std::filesystem::path FileSystem::TemporaryStem(const std::string &prefix) {
   static std::atomic_uint64_t sequence{0};
   return std::filesystem::temp_directory_path() /

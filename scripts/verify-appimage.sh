@@ -45,7 +45,7 @@ trap 'rm -rf -- "$SCRATCH"' EXIT
 APPDIR="$SCRATCH/squashfs-root"
 
 for file in AppRun termify.desktop termify.svg usr/bin/termify \
-  usr/lib/termify/yt-dlp; do
+  usr/bin/curl usr/lib/termify/yt-dlp; do
   if [[ ! -e "$APPDIR/$file" ]]; then
     echo "$file is missing from $NAME." >&2
     exit 1
@@ -57,6 +57,10 @@ if ! grep -qx 'Terminal=true' "$APPDIR/termify.desktop"; then
 fi
 if ! grep -q 'TERMIFY_YTDLP' "$APPDIR/AppRun"; then
   echo "AppRun does not select the bundled yt-dlp executable." >&2
+  exit 1
+fi
+if ! grep -q 'usr/bin.*PATH' "$APPDIR/AppRun"; then
+  echo "AppRun does not expose the bundled curl executable." >&2
   exit 1
 fi
 
@@ -81,6 +85,11 @@ if LD_LIBRARY_PATH="$APPDIR/usr/lib" ldd "$APPDIR/usr/bin/termify" |
   echo "The extracted Termify executable has unresolved libraries." >&2
   exit 1
 fi
+if LD_LIBRARY_PATH="$APPDIR/usr/lib" ldd "$APPDIR/usr/bin/curl" |
+  grep -q 'not found'; then
+  echo "The extracted curl executable has unresolved libraries." >&2
+  exit 1
+fi
 
 if [[ "$(APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" --version)" != \
   "termify $VERSION" ]]; then
@@ -90,6 +99,11 @@ fi
 if [[ "$("$APPDIR/usr/lib/termify/yt-dlp" --version)" != \
   "$TERMIFY_YTDLP_VERSION" ]]; then
   echo "The AppImage contains the wrong yt-dlp version." >&2
+  exit 1
+fi
+if ! LD_LIBRARY_PATH="$APPDIR/usr/lib" \
+  "$APPDIR/usr/bin/curl" --version >/dev/null; then
+  echo "The AppImage contains a broken curl executable." >&2
   exit 1
 fi
 

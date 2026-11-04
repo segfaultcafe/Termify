@@ -46,6 +46,9 @@ public:
 class TestFileSystem final : public termify::platform::FileSystem {
 public:
   std::filesystem::path ExecutableDirectory() const override { return {}; }
+  std::filesystem::path TemporaryDirectory() const override {
+    return std::filesystem::temp_directory_path();
+  }
   std::optional<std::filesystem::path>
   FindExecutable(const std::string &,
                  const std::vector<std::filesystem::path> &) const override {
