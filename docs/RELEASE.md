@@ -19,7 +19,9 @@ but does not replace the real-device playback checks below.
 CI must build, test, start, package, checksum, install, and run `--version` for:
 
 - Linux `x86_64`
+- Linux `arm64` on a native `aarch64` runner
 - Linux `x86_64` AppImage built against the Debian 12 glibc baseline
+- Linux `arm64` AppImage built against the Debian 12 glibc baseline
 - macOS Intel `x86_64`
 - macOS Apple Silicon `arm64`
 
@@ -53,12 +55,14 @@ GitHub release notes.
   ```
 
 - Watch the **Release** workflow. It independently builds, tests, packages,
-  installs, and checks `--version` for Linux x86_64 and both macOS
-  architectures. The Linux archive is produced in an Arch Linux container to
-  preserve the documented FFmpeg ABI contract. The self-contained x86_64
-  AppImage is produced separately on Debian 12, verifies its bundled
-  dependency closure, and starts without requiring FUSE. Every package also
-  requires the bundled yt-dlp to report the pinned version.
+  installs, and checks `--version` for Linux x86_64, Linux ARM64, and both
+  macOS architectures. The x86_64 Linux archive is produced in an Arch Linux
+  container to preserve the documented FFmpeg ABI contract; the ARM64 archive
+  is built natively on Ubuntu 24.04. Self-contained AppImages for both Linux
+  architectures are produced separately on Debian 12, verify their bundled
+  dependency closure, and start on clean native Ubuntu runners without
+  requiring FUSE. Every package also requires the architecture-matched bundled
+  yt-dlp to report the pinned version.
 - The workflow creates keyless Sigstore-backed GitHub artifact attestations for
   every archive, per-archive checksum, and the aggregate `SHA256SUMS` manifest.
 - Publishing is draft-first. The complete asset set is uploaded to a draft and
@@ -101,6 +105,8 @@ gh attestation verify "termify-${TAG}-linux-x86_64.AppImage" \
   --signer-workflow "$WORKFLOW" \
   --source-ref "refs/tags/$TAG"
 ```
+
+Replace `x86_64` with `arm64` to verify either Linux ARM64 artifact.
 
 Then verify the archive bytes against the signed manifest:
 

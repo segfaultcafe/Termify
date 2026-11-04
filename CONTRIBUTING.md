@@ -60,10 +60,12 @@ make run        # run the Debug build
 make test       # rebuild and run all tests with failure output
 make clean      # remove the Debug build directory
 make package    # build and verify a release archive and checksum
+make appimage   # build an AppImage for the current Linux architecture
 ```
 
 The pull-request integration matrix also builds and starts Termify in Arch,
-Debian, and Ubuntu containers and on native macOS `x86_64` and `arm64` runners.
+Debian, and Ubuntu containers, packages Linux on native `x86_64` and ARM64
+runners, and tests native macOS `x86_64` and `arm64` runners.
 Run one Linux image locally with, for example:
 
 ```bash

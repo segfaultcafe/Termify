@@ -2,6 +2,31 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJECT_DIR/scripts/platform.sh"
+source "$PROJECT_DIR/scripts/appimage-tools.sh"
+source "$PROJECT_DIR/scripts/yt-dlp.sh"
+
+test "$(termify_canonical_arch x86_64)" = x86_64
+test "$(termify_canonical_arch amd64)" = x86_64
+test "$(termify_canonical_arch aarch64)" = arm64
+test "$(termify_canonical_arch arm64)" = arm64
+test "$(termify_appimage_arch x86_64)" = x86_64
+test "$(termify_appimage_arch arm64)" = aarch64
+test "$(termify_appimage_tool_checksum LINUXDEPLOY aarch64)" = \
+  "$TERMIFY_LINUXDEPLOY_AARCH64_SHA256"
+test "$(termify_appimage_tool_checksum APPIMAGETOOL aarch64)" = \
+  "$TERMIFY_APPIMAGETOOL_AARCH64_SHA256"
+test "$(termify_appimage_tool_checksum APPIMAGE_RUNTIME aarch64)" = \
+  "$TERMIFY_APPIMAGE_RUNTIME_AARCH64_SHA256"
+test "$(termify_ytdlp_asset Linux aarch64)" = \
+  $'linux\tyt-dlp_linux_aarch64\t'"$TERMIFY_YTDLP_LINUX_ARM64_SHA256"
+test "$(termify_ytdlp_asset Linux x86_64)" = \
+  $'linux\tyt-dlp_linux\t'"$TERMIFY_YTDLP_LINUX_X86_64_SHA256"
+if termify_canonical_arch sparc64 >/dev/null 2>&1; then
+  echo "An unsupported release architecture was accepted." >&2
+  exit 1
+fi
+
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/termify-release-test.XXXXXX")"
 trap 'rm -rf -- "$SCRATCH"' EXIT
 

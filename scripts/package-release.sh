@@ -7,11 +7,13 @@ DIST_DIR="$PROJECT_DIR/dist"
 VERSION="$(sed -n 's/^project(termify VERSION \([^ ]*\).*/\1/p' \
   "$PROJECT_DIR/CMakeLists.txt")"
 SYSTEM="$(uname -s)"
-ARCH="$(uname -m)"
+NATIVE_ARCH="$(uname -m)"
+source "$PROJECT_DIR/scripts/platform.sh"
+ARCH="$(termify_canonical_arch "$NATIVE_ARCH")"
 case "$SYSTEM:$ARCH" in
-Linux:x86_64) PLATFORM="linux" ;;
+Linux:x86_64 | Linux:arm64) PLATFORM="linux" ;;
 Darwin:x86_64 | Darwin:arm64) PLATFORM="macos" ;;
-*) echo "Release packaging is unsupported on $SYSTEM $ARCH." >&2; exit 1 ;;
+*) echo "Release packaging is unsupported on $SYSTEM $NATIVE_ARCH." >&2; exit 1 ;;
 esac
 PACKAGE_NAME="termify-v${VERSION}-${PLATFORM}-${ARCH}"
 STAGE_DIR="$DIST_DIR/$PACKAGE_NAME"

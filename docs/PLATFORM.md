@@ -45,6 +45,10 @@ Silicon (`arm64`). It uses the shared POSIX process and terminal capabilities,
 macOS filesystem conventions and executable discovery, and a native Core Audio
 output implementation.
 
+Linux release builds target `x86_64` and ARM64. Linux reports the latter as
+`aarch64`; packaging normalizes that spelling to `arm64` for release artifact
+names while preserving `aarch64` for AppImage's architecture metadata.
+
 Windows remains a later target. Its implementation can satisfy the same
 interfaces without emulating POSIX or changing Core code.
 
@@ -56,6 +60,10 @@ be represented by a Linux container, so CI uses native GitHub-hosted machines:
 
 - `macos-15-intel` validates the `x86_64`/AMD64 build.
 - `macos-15` validates the Apple Silicon `arm64` build.
+
+Linux ARM64 archives and AppImages run on the native `ubuntu-24.04-arm`
+GitHub-hosted runner. AppImages for both Linux architectures are assembled in a
+Debian 12 container and then started again in a clean Ubuntu 24.04 container.
 
 After integration succeeds, the package matrix builds a native archive on each
 release architecture, verifies its SHA-256 checksum, installs it into a clean

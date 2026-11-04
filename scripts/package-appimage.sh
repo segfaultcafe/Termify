@@ -6,14 +6,17 @@ BUILD_DIR="$PROJECT_DIR/bin/AppImage"
 DIST_DIR="$PROJECT_DIR/dist"
 VERSION="$(sed -n 's/^project(termify VERSION \([^ ]*\).*/\1/p' \
   "$PROJECT_DIR/CMakeLists.txt")"
-ARCH="$(uname -m)"
+NATIVE_ARCH="$(uname -m)"
+source "$PROJECT_DIR/scripts/platform.sh"
+ARCH="$(termify_canonical_arch "$NATIVE_ARCH")"
+APPIMAGE_ARCH="$(termify_appimage_arch "$ARCH")"
 APPDIR="$DIST_DIR/termify.AppDir"
 APPIMAGE="$DIST_DIR/termify-v${VERSION}-linux-${ARCH}.AppImage"
 source "$PROJECT_DIR/scripts/yt-dlp.sh"
 source "$PROJECT_DIR/scripts/appimage-tools.sh"
 
-if [[ "$(uname -s)" != "Linux" || "$ARCH" != "x86_64" ]]; then
-  echo "AppImage packaging currently requires Linux x86_64." >&2
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "AppImage packaging requires Linux, not $(uname -s)." >&2
   exit 1
 fi
 if [[ -z "$VERSION" ]]; then
@@ -22,9 +25,9 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 YTDLP_CACHE="$(termify_ensure_ytdlp "$PROJECT_DIR")"
-LINUXDEPLOY="$(termify_ensure_linuxdeploy "$PROJECT_DIR")"
-APPIMAGETOOL="$(termify_ensure_appimagetool "$PROJECT_DIR")"
-APPIMAGE_RUNTIME="$(termify_ensure_appimage_runtime "$PROJECT_DIR")"
+LINUXDEPLOY="$(termify_ensure_linuxdeploy "$PROJECT_DIR" "$APPIMAGE_ARCH")"
+APPIMAGETOOL="$(termify_ensure_appimagetool "$PROJECT_DIR" "$APPIMAGE_ARCH")"
+APPIMAGE_RUNTIME="$(termify_ensure_appimage_runtime "$PROJECT_DIR" "$APPIMAGE_ARCH")"
 
 cmake -E remove_directory "$BUILD_DIR"
 cmake -E remove_directory "$APPDIR"
@@ -105,7 +108,7 @@ ln -sfn usr/share/icons/hicolor/scalable/apps/termify.svg \
   "$APPDIR/termify.svg"
 ln -sfn termify.svg "$APPDIR/.DirIcon"
 
-ARCH=x86_64 VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1 \
+ARCH="$APPIMAGE_ARCH" VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1 \
   "$APPIMAGETOOL" --runtime-file "$APPIMAGE_RUNTIME" \
   "$APPDIR" "$APPIMAGE"
 chmod 0755 "$APPIMAGE"

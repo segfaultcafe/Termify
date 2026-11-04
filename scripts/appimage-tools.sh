@@ -3,12 +3,30 @@
 # AppImage build inputs are pinned to immutable upstream releases and verified
 # before use. Keep these values in sync with the official GitHub release asset
 # digests when deliberately upgrading the packaging toolchain.
+TERMIFY_APPIMAGE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$TERMIFY_APPIMAGE_SCRIPT_DIR/platform.sh"
+
 TERMIFY_LINUXDEPLOY_VERSION="1-alpha-20251107-1"
 TERMIFY_LINUXDEPLOY_X86_64_SHA256="c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d"
+TERMIFY_LINUXDEPLOY_AARCH64_SHA256="620095110d693282b8ebeb244a95b5e911cf8f65f76c88b4b47d16ae6346fcff"
 TERMIFY_APPIMAGETOOL_VERSION="1.9.1"
 TERMIFY_APPIMAGETOOL_X86_64_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+TERMIFY_APPIMAGETOOL_AARCH64_SHA256="f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158"
 TERMIFY_APPIMAGE_RUNTIME_VERSION="20251108"
 TERMIFY_APPIMAGE_RUNTIME_X86_64_SHA256="2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+TERMIFY_APPIMAGE_RUNTIME_AARCH64_SHA256="00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444"
+
+termify_appimage_tool_checksum() {
+  local tool="$1"
+  local architecture="$2"
+  local variable="TERMIFY_${tool}_${architecture^^}_SHA256"
+  variable="${variable//-/_}"
+  if [[ -z "${!variable:-}" ]]; then
+    echo "No pinned $tool checksum is available for $architecture." >&2
+    return 1
+  fi
+  printf '%s\n' "${!variable}"
+}
 
 termify_fetch_verified_tool() (
   set -euo pipefail
@@ -38,24 +56,27 @@ termify_fetch_verified_tool() (
 
 termify_ensure_linuxdeploy() {
   local project_dir="$1"
-  local cache="$project_dir/.cache/appimage/linuxdeploy-${TERMIFY_LINUXDEPLOY_VERSION}-x86_64.AppImage"
-  local url="https://github.com/linuxdeploy/linuxdeploy/releases/download/${TERMIFY_LINUXDEPLOY_VERSION}/linuxdeploy-x86_64.AppImage"
-  termify_fetch_verified_tool "$url" \
-    "$TERMIFY_LINUXDEPLOY_X86_64_SHA256" "$cache"
+  local architecture="${2:-$(termify_appimage_arch "$(uname -m)")}" checksum
+  local cache="$project_dir/.cache/appimage/linuxdeploy-${TERMIFY_LINUXDEPLOY_VERSION}-${architecture}.AppImage"
+  local url="https://github.com/linuxdeploy/linuxdeploy/releases/download/${TERMIFY_LINUXDEPLOY_VERSION}/linuxdeploy-${architecture}.AppImage"
+  checksum="$(termify_appimage_tool_checksum LINUXDEPLOY "$architecture")"
+  termify_fetch_verified_tool "$url" "$checksum" "$cache"
 }
 
 termify_ensure_appimagetool() {
   local project_dir="$1"
-  local cache="$project_dir/.cache/appimage/appimagetool-${TERMIFY_APPIMAGETOOL_VERSION}-x86_64.AppImage"
-  local url="https://github.com/AppImage/appimagetool/releases/download/${TERMIFY_APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
-  termify_fetch_verified_tool "$url" \
-    "$TERMIFY_APPIMAGETOOL_X86_64_SHA256" "$cache"
+  local architecture="${2:-$(termify_appimage_arch "$(uname -m)")}" checksum
+  local cache="$project_dir/.cache/appimage/appimagetool-${TERMIFY_APPIMAGETOOL_VERSION}-${architecture}.AppImage"
+  local url="https://github.com/AppImage/appimagetool/releases/download/${TERMIFY_APPIMAGETOOL_VERSION}/appimagetool-${architecture}.AppImage"
+  checksum="$(termify_appimage_tool_checksum APPIMAGETOOL "$architecture")"
+  termify_fetch_verified_tool "$url" "$checksum" "$cache"
 }
 
 termify_ensure_appimage_runtime() {
   local project_dir="$1"
-  local cache="$project_dir/.cache/appimage/runtime-${TERMIFY_APPIMAGE_RUNTIME_VERSION}-x86_64"
-  local url="https://github.com/AppImage/type2-runtime/releases/download/${TERMIFY_APPIMAGE_RUNTIME_VERSION}/runtime-x86_64"
-  termify_fetch_verified_tool "$url" \
-    "$TERMIFY_APPIMAGE_RUNTIME_X86_64_SHA256" "$cache"
+  local architecture="${2:-$(termify_appimage_arch "$(uname -m)")}" checksum
+  local cache="$project_dir/.cache/appimage/runtime-${TERMIFY_APPIMAGE_RUNTIME_VERSION}-${architecture}"
+  local url="https://github.com/AppImage/type2-runtime/releases/download/${TERMIFY_APPIMAGE_RUNTIME_VERSION}/runtime-${architecture}"
+  checksum="$(termify_appimage_tool_checksum APPIMAGE_RUNTIME "$architecture")"
+  termify_fetch_verified_tool "$url" "$checksum" "$cache"
 }
