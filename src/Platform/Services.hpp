@@ -70,6 +70,12 @@ public:
   TryLock(const std::filesystem::path &path, FileLockMode mode) const = 0;
   virtual LockedFile CreateLockedFile(const std::filesystem::path &directory,
                                       const std::string &prefix) const = 0;
+  virtual std::filesystem::path
+  CreatePrivateDirectory(const std::filesystem::path &directory,
+                         const std::string &prefix) const = 0;
+  virtual void ReplaceFileAtomically(const std::filesystem::path &source,
+                                     const std::filesystem::path &destination,
+                                     bool executable) const = 0;
 };
 
 struct TerminalSize {

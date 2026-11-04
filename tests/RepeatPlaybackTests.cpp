@@ -73,6 +73,16 @@ public:
                    const std::string &) const override {
     return {};
   }
+  std::filesystem::path
+  CreatePrivateDirectory(const std::filesystem::path &,
+                         const std::string &) const override {
+    throw std::runtime_error("unused");
+  }
+  void ReplaceFileAtomically(const std::filesystem::path &,
+                             const std::filesystem::path &,
+                             bool) const override {
+    throw std::runtime_error("unused");
+  }
 };
 
 class TestTerminal final : public termify::platform::TerminalDriver {

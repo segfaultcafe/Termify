@@ -42,6 +42,34 @@ portable artifact. Known package-managed locations are refused so Termify does
 not bypass `.deb`, `.rpm`, AUR, Homebrew, MacPorts, Flatpak, Snap, or Nix
 ownership. Those installations must be updated with their package manager.
 
-The full trust model is described in [RELEASE.md](RELEASE.md). Automatic
-installation, atomic replacement, and rollback are separate milestones and are
-not performed by either update command.
+The full trust model is described in [RELEASE.md](RELEASE.md).
+
+## Atomic installation and rollback
+
+`termify update` performs the same release check, provenance verification, and
+checksum verification as `termify update --download`, then installs the staged
+artifact. It supports AppImage and user-local archive installations. Known
+package-managed locations are refused before any installation changes.
+
+AppImages are copied to a private file beside the installed AppImage, synced,
+made executable, and renamed over the installed file. A rename on the same
+filesystem makes the visible replacement atomic. User-local archives are
+extracted privately and their bundled yt-dlp and Termify executable are each
+replaced through the same platform filesystem operation.
+
+Before replacement, Termify copies the installed files to its private update
+cache and atomically publishes a rollback record scoped to the executable path.
+Publishing that record first preserves recovery if Termify, the terminal, or
+the machine stops between the two user-local file replacements. An ordinary
+replacement failure restores every file changed by the transaction.
+An interrupted transaction remains marked as pending; another install is
+refused until `termify update --rollback` restores the pre-update files.
+
+`termify update --rollback` restores the files recorded by the last successful
+update, then deletes that rollback record. A second successful update replaces
+the rollback point, so rollback always returns to the immediately preceding
+working installation. Separate executable paths use separate records.
+
+The updater does not modify configuration or databases. A per-installation
+exclusive lock rejects concurrent update and rollback processes for the same
+executable.

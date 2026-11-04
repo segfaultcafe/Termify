@@ -101,6 +101,25 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic)
   add_test(NAME update_downloader COMMAND update_downloader_tests)
 
+  add_executable(update_installer_tests
+    tests/UpdateInstallerTests.cpp
+    src/Core/Sha256.cpp
+    src/Core/UpdateInstaller.cpp
+  )
+  target_include_directories(update_installer_tests PRIVATE src)
+  target_compile_options(update_installer_tests PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME update_installer COMMAND update_installer_tests)
+
+  add_executable(posix_filesystem_tests
+    tests/PosixFileSystemTests.cpp
+    src/Platform/Posix/PosixServices.cpp
+  )
+  target_include_directories(posix_filesystem_tests PRIVATE src)
+  target_compile_options(posix_filesystem_tests PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME posix_filesystem COMMAND posix_filesystem_tests)
+
   add_executable(tui_foundation_tests
     tests/TuiFoundationTests.cpp
     src/Tui/Canvas.cpp

@@ -83,6 +83,16 @@ public:
     std::ofstream(path).close();
     return {path, std::make_shared<TestLease>()};
   }
+  std::filesystem::path
+  CreatePrivateDirectory(const std::filesystem::path &,
+                         const std::string &) const override {
+    throw std::runtime_error("unused");
+  }
+  void ReplaceFileAtomically(const std::filesystem::path &,
+                             const std::filesystem::path &,
+                             bool) const override {
+    throw std::runtime_error("unused");
+  }
 
   std::filesystem::path root;
   bool provideCurl{true};

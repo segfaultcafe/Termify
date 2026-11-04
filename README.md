@@ -187,8 +187,26 @@ installation type. It requires GitHub CLI (`gh`) to verify the keyless
 GitHub/Sigstore provenance of both `SHA256SUMS` and the artifact, then performs
 an independent SHA-256 comparison before retaining either file. Package-managed
 installations are refused and must be updated through their package manager.
-This command only stages verified files; atomic installation and rollback are
-the next updater milestone.
+This command only stages verified files.
+
+Download, verify, and atomically install the newest stable release:
+
+```bash
+termify update
+```
+
+This is supported for AppImage and user-local archive installations. Termify
+records the current executable—and the bundled yt-dlp for archive installs—
+before replacement. If installation fails, it restores those files
+automatically. To restore the version replaced by the last successful update:
+
+```bash
+termify update --rollback
+```
+
+Rollback records are scoped to the installed executable, so separate Termify
+installations do not overwrite each other's recovery state. Package-managed
+installations remain owned by their package manager and refuse both commands.
 
 ### Linux distribution setup
 
