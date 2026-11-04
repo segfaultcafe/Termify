@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Termify
+Comment=Terminal audio player for local and online music
+Exec=termify
+Icon=termify
+Terminal=true
+Categories=AudioVideo;Audio;Player;
+Keywords=terminal;audio;music;player;
