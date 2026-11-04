@@ -22,8 +22,8 @@ leaves the terminal or system in a broken state.
 
 ### Safe updates
 
-- Provide `termify update --check` to report available releases without making
-  changes.
+- Provide `termify update --check` to report available stable releases without
+  making changes. Implemented for the v0.8 milestone.
 - Provide an explicit `termify update` flow for user-local and AppImage
   installations; never update silently in the background.
 - Verify downloaded artifacts with published checksums and release signatures
@@ -89,7 +89,8 @@ leaves the terminal or system in a broken state.
 - **v0.8 — Distribution (in progress):** publish native packages from validated
   version tags with generated notes, complete package smoke checks, SHA-256
   manifests, keyless build provenance, and self-contained Linux x86_64 and
-  ARM64 AppImages. Next, add verified update checks and rollback, and package
+  ARM64 AppImages, plus a read-only stable-release update check. Next, add
+  verified artifact download with atomic replacement and rollback, and package
   tests on clean supported distributions.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.

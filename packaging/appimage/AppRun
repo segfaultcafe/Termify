@@ -9,4 +9,5 @@ fi
 
 export TERMIFY_YTDLP="$appdir/usr/lib/termify/yt-dlp"
 export LD_LIBRARY_PATH="$appdir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PATH="$appdir/usr/bin${PATH:+:$PATH}"
 exec "$appdir/usr/bin/termify" "$@"

@@ -160,6 +160,21 @@ pass a downloaded archive to `gh attestation verify` with the same identity
 flags. See [docs/RELEASE.md](docs/RELEASE.md) for the complete verification
 procedure and trust model.
 
+### Check for updates
+
+Ask GitHub for the newest stable release without changing the installation:
+
+```bash
+termify update --check
+```
+
+The command reports whether the installed version is current and prints the
+official release URL when an update exists. An available update still returns
+exit status 0; network and metadata failures return nonzero. AppImages include
+the required network client. Native archives and source builds use `curl` from
+`PATH`. See [docs/UPDATES.md](docs/UPDATES.md) for the security and behavior
+contract.
+
 ### Linux distribution setup
 
 The following dependencies apply to the native Linux archive. The AppImage

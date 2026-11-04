@@ -57,6 +57,7 @@ class FileSystem {
 public:
   virtual ~FileSystem() = default;
   virtual std::filesystem::path ExecutableDirectory() const = 0;
+  virtual std::filesystem::path TemporaryDirectory() const = 0;
   virtual std::optional<std::filesystem::path>
   FindExecutable(const std::string &name,
                  const std::vector<std::filesystem::path> &preferred) const = 0;

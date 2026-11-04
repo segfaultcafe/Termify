@@ -81,6 +81,15 @@ if(BUILD_TESTING)
   target_compile_options(song_queue_tests PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME song_queue COMMAND song_queue_tests)
 
+  add_executable(update_checker_tests
+    tests/UpdateCheckerTests.cpp
+    src/Core/UpdateChecker.cpp
+  )
+  target_include_directories(update_checker_tests PRIVATE src)
+  target_compile_options(update_checker_tests PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME update_checker COMMAND update_checker_tests)
+
   add_executable(tui_foundation_tests
     tests/TuiFoundationTests.cpp
     src/Tui/Canvas.cpp

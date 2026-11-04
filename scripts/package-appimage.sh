@@ -25,6 +25,11 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 YTDLP_CACHE="$(termify_ensure_ytdlp "$PROJECT_DIR")"
+CURL_EXECUTABLE="$(command -v curl || true)"
+if [[ -z "$CURL_EXECUTABLE" ]]; then
+  echo "curl is required to package the AppImage update checker." >&2
+  exit 1
+fi
 LINUXDEPLOY="$(termify_ensure_linuxdeploy "$PROJECT_DIR" "$APPIMAGE_ARCH")"
 APPIMAGETOOL="$(termify_ensure_appimagetool "$PROJECT_DIR" "$APPIMAGE_ARCH")"
 APPIMAGE_RUNTIME="$(termify_ensure_appimage_runtime "$PROJECT_DIR" "$APPIMAGE_ARCH")"
@@ -42,14 +47,20 @@ ctest --test-dir "$BUILD_DIR" --output-on-failure
 DESTDIR="$APPDIR" cmake --install "$BUILD_DIR" --strip
 
 install -Dm755 "$YTDLP_CACHE" "$APPDIR/usr/lib/termify/yt-dlp"
+install -Dm755 "$CURL_EXECUTABLE" "$APPDIR/usr/bin/curl"
 install -Dm644 "$PROJECT_DIR/LICENSE" \
   "$APPDIR/usr/share/doc/termify/LICENSE"
 install -Dm644 "$PROJECT_DIR/README.md" \
   "$APPDIR/usr/share/doc/termify/README.md"
+if [[ -f /usr/share/doc/curl/copyright ]]; then
+  install -Dm644 /usr/share/doc/curl/copyright \
+    "$APPDIR/usr/share/doc/curl/copyright"
+fi
 
 APPIMAGE_EXTRACT_AND_RUN=1 "$LINUXDEPLOY" \
   --appdir "$APPDIR" \
   --executable "$APPDIR/usr/bin/termify" \
+  --executable "$APPDIR/usr/bin/curl" \
   --desktop-file "$PROJECT_DIR/packaging/appimage/termify.desktop" \
   --icon-file "$PROJECT_DIR/packaging/appimage/termify.svg"
 
