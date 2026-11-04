@@ -50,6 +50,8 @@ public:
 private:
   void schedulerLoop();
   void prefetchLoop();
+  void wakeScheduler(bool all = false);
+  void wakePrefetch(bool all = false);
   void startNext();
   bool queuePlaylistCycle();
   void replenishPlaylistQueue(std::size_t minimum = 3);

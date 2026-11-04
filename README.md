@@ -66,7 +66,28 @@ Release archives include Termify plus the verified official standalone
 `yt-dlp` 2026.10.26 executable. Python and a separate yt-dlp installation are
 not required.
 
-### Linux x86_64
+### Linux x86_64 AppImage (v0.8.0 and newer)
+
+The AppImage is the portable Linux distribution. It bundles Termify, yt-dlp,
+FFmpeg, SQLite, ALSA's userspace library, and their non-system dependency
+closure. Download the AppImage and checksum from the matching GitHub release:
+
+```bash
+sha256sum -c termify-v0.8.0-linux-x86_64.AppImage.sha256
+chmod +x termify-v0.8.0-linux-x86_64.AppImage
+./termify-v0.8.0-linux-x86_64.AppImage
+```
+
+The host still supplies the Linux kernel, glibc, audio device, and ALSA driver
+configuration. The AppImage is built on Debian 12 to retain an older glibc
+baseline while providing the FFmpeg channel-layout API Termify requires. If
+FUSE is unavailable, run it without mounting:
+
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 ./termify-v0.8.0-linux-x86_64.AppImage
+```
+
+### Linux x86_64 native archive
 
 Download `termify-v0.7.0-linux-x86_64.tar.gz` and its checksum from the
 [v0.7.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.7.0).
@@ -113,10 +134,10 @@ writable, it safely falls back to placing yt-dlp beside the Termify executable.
 
 ### Verify an automated release
 
-Starting with the v0.8 release pipeline, stable tags build and publish all
-native archives automatically. Each archive, checksum file, and aggregate
-`SHA256SUMS` manifest receives keyless GitHub/Sigstore provenance. Verify the
-manifest before trusting its digests:
+Starting with the v0.8 release pipeline, stable tags build and publish the
+native archives and Linux AppImage automatically. Each artifact, checksum, and
+aggregate `SHA256SUMS` manifest receives keyless GitHub/Sigstore provenance.
+Verify the manifest before trusting its digests:
 
 ```bash
 TAG=v0.8.0
@@ -134,10 +155,9 @@ procedure and trust model.
 
 ### Linux distribution setup
 
-Termify uses FFmpeg libraries for decoding, ALSA for audio output, and SQLite
-for local storage. Install those runtime dependencies before running the
-release. The archive is not yet a universal Linux binary; check the ABI
-compatibility note below before installing.
+The following dependencies apply to the native Linux archive. The AppImage
+already bundles these userspace libraries. Termify uses FFmpeg for decoding,
+ALSA for audio output, and SQLite for local storage.
 
 **Arch Linux / Manjaro**
 
@@ -405,6 +425,7 @@ make run
 ```bash
 make test       # rebuild and run the test suite
 make package    # create a tested native release archive and checksum
+make appimage   # create and test the self-contained Linux x86_64 AppImage
 make install    # build, test, and install to /usr/local/bin
 ```
 
@@ -414,9 +435,9 @@ project cache; subsequent builds reuse the verified copy without network access.
 Python and a separate yt-dlp installation are not required. The build reports
 the bundled downloader version so an outdated copy is easy to spot.
 
-Pushing a stable version tag invokes the automated native release pipeline;
-ordinary source builds and the manual `make package` target keep the same
-behavior. Maintainer instructions are in [docs/RELEASE.md](docs/RELEASE.md).
+Pushing a stable version tag invokes the automated release pipeline; ordinary
+source builds and the manual packaging targets keep the same behavior.
+Maintainer instructions are in [docs/RELEASE.md](docs/RELEASE.md).
 
 The terminal interface is composed from reusable, keyboard- and mouse-aware
 widgets. See [docs/TUI.md](docs/TUI.md) before adding or changing interface

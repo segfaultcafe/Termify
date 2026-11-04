@@ -1,4 +1,4 @@
-.PHONY: all build run test clean package install
+.PHONY: all build run test clean package appimage install
 
 BUILD_DIR := ./bin
 BINARY_NAME := termify
@@ -20,6 +20,9 @@ clean:
 
 package:
 	./scripts/package-release.sh
+
+appimage:
+	./scripts/package-appimage.sh
 
 install:
 	./scripts/release.sh

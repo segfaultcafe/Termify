@@ -89,9 +89,9 @@ leaves the terminal or system in a broken state.
   behavior.
 - **v0.8 — Distribution (in progress):** publish native packages from validated
   version tags with generated notes, complete package smoke checks, SHA-256
-  manifests, and keyless build provenance. Next, ship AppImage builds, add
-  Linux ARM64, add verified update checks and rollback, and test packages on
-  clean supported distributions.
+  manifests, keyless build provenance, and a self-contained Linux x86_64
+  AppImage. Next, add Linux ARM64, verified update checks and rollback, and
+  package tests on clean supported distributions.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a
