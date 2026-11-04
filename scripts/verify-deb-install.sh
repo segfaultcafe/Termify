@@ -13,7 +13,11 @@ if [[ "$(id -u)" != 0 ]]; then
   exit 1
 fi
 
-PACKAGE="$1"
+if [[ ! -f "$1" ]]; then
+  echo "Debian package not found: $1" >&2
+  exit 1
+fi
+PACKAGE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 VERSION="$(dpkg-deb --field "$PACKAGE" Version)"
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
