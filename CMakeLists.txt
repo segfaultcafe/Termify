@@ -92,6 +92,7 @@ if(BUILD_TESTING)
 
   add_executable(update_downloader_tests
     tests/UpdateDownloaderTests.cpp
+    src/Core/ChecksumManifest.cpp
     src/Core/Sha256.cpp
     src/Core/UpdateChecker.cpp
     src/Core/UpdateDownloader.cpp
@@ -110,6 +111,18 @@ if(BUILD_TESTING)
   target_compile_options(update_installer_tests PRIVATE
     -Wall -Wextra -Wpedantic)
   add_test(NAME update_installer COMMAND update_installer_tests)
+
+  add_executable(ytdlp_updater_tests
+    tests/YtDlpUpdaterTests.cpp
+    src/Core/ChecksumManifest.cpp
+    src/Core/Sha256.cpp
+    src/Core/YtDlpLocator.cpp
+    src/Core/YtDlpUpdater.cpp
+  )
+  target_include_directories(ytdlp_updater_tests PRIVATE src)
+  target_compile_options(ytdlp_updater_tests PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME ytdlp_updater COMMAND ytdlp_updater_tests)
 
   add_executable(posix_filesystem_tests
     tests/PosixFileSystemTests.cpp
@@ -148,7 +161,7 @@ if(BUILD_TESTING)
 
   add_executable(download_cache_tests tests/DownloadCacheTests.cpp
     src/Core/AudioDownloader.cpp src/Core/LocalStore.cpp
-    src/Core/SourceHash.cpp)
+    src/Core/SourceHash.cpp src/Core/YtDlpLocator.cpp)
   target_include_directories(download_cache_tests PRIVATE src)
   target_link_libraries(download_cache_tests PRIVATE ${TERMIFY_SQLITE_TARGET}
     PkgConfig::FFMPEG termify_platform)
@@ -158,7 +171,7 @@ if(BUILD_TESTING)
   add_executable(mixer_order_tests tests/MixerOrderTests.cpp src/Core/Mixer.cpp
     src/Core/Cli.cpp src/Core/SongQueue.cpp src/Core/AudioDownloader.cpp
     src/Core/LocalStore.cpp src/Core/SourceHash.cpp src/Core/FFmpegDecoder.cpp
-    src/Core/RingBuffer.cpp)
+    src/Core/RingBuffer.cpp src/Core/YtDlpLocator.cpp)
   target_include_directories(mixer_order_tests PRIVATE src)
   target_link_libraries(mixer_order_tests PRIVATE ${TERMIFY_SQLITE_TARGET}
     PkgConfig::FFMPEG termify_platform)
@@ -168,7 +181,7 @@ if(BUILD_TESTING)
   add_executable(repeat_playback_tests tests/RepeatPlaybackTests.cpp
     src/Core/Mixer.cpp src/Core/SongQueue.cpp src/Core/AudioDownloader.cpp
     src/Core/LocalStore.cpp src/Core/SourceHash.cpp src/Core/FFmpegDecoder.cpp
-    src/Core/RingBuffer.cpp)
+    src/Core/RingBuffer.cpp src/Core/YtDlpLocator.cpp)
   target_include_directories(repeat_playback_tests PRIVATE src)
   target_link_libraries(repeat_playback_tests PRIVATE
     ${TERMIFY_SQLITE_TARGET} PkgConfig::FFMPEG)

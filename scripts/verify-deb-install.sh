@@ -40,6 +40,15 @@ if ! grep -qi 'managed by a package manager' \
   echo "The updater did not explain package-manager ownership." >&2
   exit 1
 fi
+if termify update yt-dlp --check >"$SCRATCH/stdout" 2>"$SCRATCH/stderr"; then
+  echo "A package-managed installation accepted a private yt-dlp update." >&2
+  exit 1
+fi
+if ! grep -qi 'managed by a package manager' \
+  "$SCRATCH/stdout" "$SCRATCH/stderr"; then
+  echo "The yt-dlp updater did not explain package-manager ownership." >&2
+  exit 1
+fi
 
 DEBIAN_FRONTEND=noninteractive apt-get remove -y termify
 test ! -e /usr/bin/termify

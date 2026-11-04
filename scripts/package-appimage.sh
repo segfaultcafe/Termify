@@ -111,8 +111,9 @@ for library in "${EXCLUDED_RUNTIME_LIBRARIES[@]}"; do
   bundle_excluded_library "$library"
 done
 
-# linuxdeploy assembles the dependency closure. Termify supplies its own entry
-# point so the bundled downloader is always selected ahead of host copies.
+# linuxdeploy assembles the dependency closure. Termify's executable discovery
+# finds the private updater-managed downloader first and this bundled copy as
+# its immutable fallback.
 install -Dm755 "$PROJECT_DIR/packaging/appimage/AppRun" "$APPDIR/AppRun"
 ln -sfn usr/share/applications/termify.desktop "$APPDIR/termify.desktop"
 ln -sfn usr/share/icons/hicolor/scalable/apps/termify.svg \

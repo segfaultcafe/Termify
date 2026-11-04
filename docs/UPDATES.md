@@ -73,3 +73,32 @@ working installation. Separate executable paths use separate records.
 The updater does not modify configuration or databases. A per-installation
 exclusive lock rejects concurrent update and rollback processes for the same
 executable.
+
+## Independent yt-dlp updates
+
+`termify update yt-dlp --check` compares the active downloader with Termify's
+independent yt-dlp release channel. `termify update yt-dlp` downloads and
+installs an available update, while `termify update yt-dlp --rollback` restores
+the previous private update or removes it to return to the downloader bundled
+with Termify.
+
+Maintainers publish these updates as GitHub prereleases tagged
+`yt-dlp-vYYYY.MM.DD[.REVISION]`. They are intentionally separate from stable
+`vMAJOR.MINOR.PATCH` Termify releases, so they do not change what
+`termify update --check` reports. The publishing workflow downloads the three
+official standalone executables, verifies yt-dlp's signed `SHA2-256SUMS`
+against its pinned signing-key fingerprint, and republishes an attested
+SHA-256 manifest for Linux x86_64, Linux ARM64, and universal macOS.
+
+The client accepts only assets attested for Termify's dedicated
+`.github/workflows/yt-dlp-release.yml` workflow on `master`, rejects
+self-hosted-runner provenance, and independently checks the selected asset's
+SHA-256 digest and reported version. This verification requires GitHub CLI
+(`gh`) in `PATH`. Installation uses a private data path and atomic replacement
+with a separate lock and rollback record. AppImages can therefore update their
+extractor despite their immutable filesystem; their embedded downloader
+remains untouched as a fallback.
+
+Known package-managed installations refuse independent downloader updates.
+They never load a private update left by an AppImage or archive installation;
+the distribution package continues to own and update its bundled yt-dlp.

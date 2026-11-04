@@ -64,7 +64,6 @@ private:
   std::filesystem::path getYtDlpLocation();
 
 private:
-  std::filesystem::path _executablePath;
   std::filesystem::path _ytDlpExecutablePath;
   std::mutex _searchCacheMtx;
   std::unordered_map<string, SearchCacheEntry> _searchCache;

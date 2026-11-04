@@ -226,6 +226,29 @@ Rollback records are scoped to the installed executable, so separate Termify
 installations do not overwrite each other's recovery state. Package-managed
 installations remain owned by their package manager and refuse both commands.
 
+Update only the online extractor, without waiting for a new Termify release:
+
+```bash
+termify update yt-dlp --check
+termify update yt-dlp
+```
+
+Termify installs verified independent yt-dlp updates in its private user data
+directory, ahead of the downloader bundled in an AppImage or native archive.
+The bundled copy remains a known-good fallback. The update is explicit,
+atomically installed, and can be reverted with:
+
+```bash
+termify update yt-dlp --rollback
+```
+
+Independent updates are repackaged from the official stable yt-dlp release
+after its signed checksum manifest is verified. Termify then requires its own
+GitHub provenance and SHA-256 manifest before installation, so the command
+requires GitHub CLI (`gh`) just like full verified downloads. Package-managed
+Termify installations refuse this command so APT and other package managers
+continue to own every installed file.
+
 ### Linux distribution setup
 
 The following dependencies apply to the native Linux archive. APT resolves

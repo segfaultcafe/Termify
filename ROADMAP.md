@@ -34,7 +34,9 @@ leaves the terminal or system in a broken state.
   support a simple rollback after a failed update. Implemented for the v0.8
   milestone for AppImage and user-local archive installations.
 - Update the bundled yt-dlp independently when extractor fixes are needed,
-  without requiring a full Termify release.
+  without requiring a full Termify release. Implemented for the v0.8 milestone
+  with an attested prerelease channel, explicit install, atomic replacement,
+  and rollback.
 - Detect package-managed installations and direct users to their package
   manager instead of overwriting managed files.
 - Back up and migrate configuration safely when its schema changes.
@@ -95,7 +97,9 @@ leaves the terminal or system in a broken state.
   ARM64 AppImages, a read-only stable-release update check, and attested,
   checksum-verified artifact staging, atomic replacement, and rollback. Native
   `.deb` packages are built, installed, started, update-guarded, and removed on
-  clean Debian 12 and Ubuntu 24.04 runners for amd64 and arm64. RPM, AUR, and
+  clean Debian 12 and Ubuntu 24.04 runners for amd64 and arm64. Independent
+  yt-dlp updates use a separately attested prerelease channel with atomic
+  private installation and rollback. RPM, AUR, and
   broader distribution packages remain v1 portability work where they improve
   integration.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the

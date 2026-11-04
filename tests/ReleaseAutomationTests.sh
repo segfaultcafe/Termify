@@ -22,6 +22,14 @@ test "$(termify_ytdlp_asset Linux aarch64)" = \
   $'linux\tyt-dlp_linux_aarch64\t'"$TERMIFY_YTDLP_LINUX_ARM64_SHA256"
 test "$(termify_ytdlp_asset Linux x86_64)" = \
   $'linux\tyt-dlp_linux\t'"$TERMIFY_YTDLP_LINUX_X86_64_SHA256"
+grep -q 'YTDLP_SIGNING_FINGERPRINT: AC0CBBE6848D6A873464AF4E57CF65933B5A7581' \
+  "$PROJECT_DIR/.github/workflows/yt-dlp-release.yml"
+grep -q -- '--prerelease' \
+  "$PROJECT_DIR/.github/workflows/yt-dlp-release.yml"
+grep -q 'yt-dlp_linux_aarch64' \
+  "$PROJECT_DIR/.github/workflows/yt-dlp-release.yml"
+grep -q 'actions/attest@' \
+  "$PROJECT_DIR/.github/workflows/yt-dlp-release.yml"
 if termify_canonical_arch sparc64 >/dev/null 2>&1; then
   echo "An unsupported release architecture was accepted." >&2
   exit 1

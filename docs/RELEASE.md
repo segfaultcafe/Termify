@@ -86,6 +86,30 @@ Do not move a published release tag or replace published assets. Enable GitHub's
 immutable releases setting when available so this policy is enforced by the
 repository.
 
+## Publish an independent yt-dlp update
+
+When an extractor fix is needed before the next Termify release, dispatch the
+dedicated workflow from `master` with the exact official stable yt-dlp version:
+
+```bash
+gh workflow run yt-dlp-release.yml --ref master -f version=YYYY.MM.DD
+gh run watch --exit-status
+```
+
+The workflow pins yt-dlp's signing-key fingerprint, verifies the official
+signed SHA-256 manifest, checks every selected binary, and publishes Linux
+x86_64, Linux ARM64, and universal macOS assets with Termify GitHub
+attestations. It creates an immutable `yt-dlp-vYYYY.MM.DD[.REVISION]`
+prerelease and refuses to replace an existing tag or release. Because the
+entry is a prerelease, GitHub's latest stable Termify release remains
+unchanged.
+
+Before dispatching, confirm the upstream release is stable and review its
+release notes. After publishing, run `termify update yt-dlp --check`, install
+the update on a user-local or AppImage build, exercise online search and
+playback, then test `termify update yt-dlp --rollback`. Package builds should
+continue to reject the command.
+
 ## Verify a release
 
 First verify that the checksum manifest and selected archive were produced by
