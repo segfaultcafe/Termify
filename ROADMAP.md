@@ -91,10 +91,10 @@ leaves the terminal or system in a broken state.
   backend; macOS terminal, process, filesystem, and executable discovery;
   verified native packages for Apple Silicon and Intel; and preserved Linux
   behavior.
-- **v0.8 — Distribution (in progress):** publish native packages from validated
-  version tags with generated notes, complete package smoke checks, SHA-256
-  manifests, keyless build provenance, and self-contained Linux x86_64 and
-  ARM64 AppImages, a read-only stable-release update check, and attested,
+- **v0.8.0 — Distribution and updates (released):** publish native packages
+  from validated version tags with generated notes, complete package smoke
+  checks, SHA-256 manifests, keyless build provenance, and self-contained Linux
+  x86_64 and ARM64 AppImages, a read-only stable-release update check, and attested,
   checksum-verified artifact staging, atomic replacement, and rollback. Native
   `.deb` packages are built, installed, started, update-guarded, and removed on
   clean Debian 12 and Ubuntu 24.04 runners for amd64 and arm64. Independent
