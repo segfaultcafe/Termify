@@ -2,6 +2,7 @@
 #include "Core/UpdateChecker.hpp"
 #include "Core/UpdateDownloader.hpp"
 #include "Core/UpdateInstaller.hpp"
+#include "Core/YtDlpUpdater.hpp"
 #include "Platform/Services.hpp"
 #include <cstdlib>
 #include <exception>
@@ -12,6 +13,7 @@ void printHelp() {
   std::cout
       << "Usage: termify [OPTION]\n"
       << "       termify update [--check|--download|--rollback]\n"
+      << "       termify update yt-dlp [--check|--rollback]\n"
       << "A terminal audio player for local files and online searches.\n\n"
       << "Options:\n"
       << "  -h, --help       Show this help and exit\n"
@@ -20,6 +22,9 @@ void printHelp() {
       << "  update --check     Check for a newer stable release\n"
       << "  update --download  Download and verify a stable update\n"
       << "  update --rollback  Restore the version replaced by update\n\n"
+      << "  update yt-dlp       Verify and install a yt-dlp update\n"
+      << "  update yt-dlp --check     Check the yt-dlp update channel\n"
+      << "  update yt-dlp --rollback  Restore the previous yt-dlp\n\n"
       << "Interactive commands:\n"
       << "  play <song|URL|file>  pause  resume  next  repeat\n"
       << "  volume <0-100|+N|-N>  seek <seconds|M:SS>\n"
@@ -39,6 +44,39 @@ int main(int argc, char **argv) {
     if (argc == 2 && (option == "--version" || option == "-V")) {
       std::cout << "termify " << TERMIFY_VERSION << '\n';
       return EXIT_SUCCESS;
+    }
+    const bool ytDlpUpdateCommand =
+        option == "update" && argc >= 3 && argc <= 4 &&
+        std::string(argv[2]) == "yt-dlp" &&
+        (argc == 3 || std::string(argv[3]) == "--check" ||
+         std::string(argv[3]) == "--rollback");
+    if (ytDlpUpdateCommand) {
+      try {
+        auto &platform = termify::platform::CurrentPlatform();
+        const auto environment = platform.UpdateEnvironmentInfo();
+        termify::core::YtDlpUpdater updater(platform.Processes(),
+                                            platform.Files());
+        if (argc == 4 && std::string(argv[3]) == "--rollback") {
+          updater.Rollback(environment);
+          std::cout << "Restored the previous yt-dlp version.\n";
+          return EXIT_SUCCESS;
+        }
+        const auto result = updater.Check(environment);
+        if ((argc == 4 && std::string(argv[3]) == "--check") ||
+            result.state != termify::core::YtDlpUpdateState::Available) {
+          std::cout << termify::core::YtDlpUpdater::Format(result);
+          return EXIT_SUCCESS;
+        }
+        const auto prepared = updater.Prepare(result, environment);
+        updater.Install(prepared, environment);
+        std::cout << "Updated yt-dlp to " << prepared.version.String()
+                  << ". Use 'termify update yt-dlp --rollback' to restore "
+                     "the previous version.\n";
+        return EXIT_SUCCESS;
+      } catch (const std::exception &error) {
+        std::cerr << "termify: " << error.what() << '\n';
+        return EXIT_FAILURE;
+      }
     }
     const bool updateCommand =
         option == "update" &&
@@ -87,7 +125,8 @@ int main(int argc, char **argv) {
     }
     if (option == "update") {
       std::cerr << "termify: usage: termify update "
-                   "[--check|--download|--rollback]\n";
+                   "[--check|--download|--rollback]\n"
+                   "         termify update yt-dlp [--check|--rollback]\n";
       return EXIT_FAILURE;
     }
     std::cerr << "termify: unknown option '" << option

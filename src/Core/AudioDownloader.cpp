@@ -1,5 +1,6 @@
 #include "AudioDownloader.hpp"
 #include "../Platform/Services.hpp"
+#include "YtDlpLocator.hpp"
 
 #include <cctype>
 #include <fstream>
@@ -91,7 +92,6 @@ bool YtDlpManager::Init() {
     return true;
 
   try {
-    _executablePath = platform::CurrentPlatform().Files().ExecutableDirectory();
     _ytDlpExecutablePath = getYtDlpLocation();
     if (_ytDlpExecutablePath.empty()) {
       return false;
@@ -401,19 +401,9 @@ string YtDlpManager::resolveSource(const string &query,
 }
 
 std::filesystem::path YtDlpManager::getYtDlpLocation() {
-  std::vector<std::filesystem::path> preferred;
-  if (const char *overridePath = std::getenv("TERMIFY_YTDLP")) {
-    if (*overridePath != '\0')
-      preferred.emplace_back(overridePath);
-  }
-
-  preferred.push_back(_executablePath / "yt-dlp");
-  preferred.push_back(_executablePath.parent_path() / "lib/termify/yt-dlp");
-  preferred.push_back(_executablePath / ".local/bin/yt-dlp");
-  return platform::CurrentPlatform()
-      .Files()
-      .FindExecutable("yt-dlp", preferred)
-      .value_or(std::filesystem::path{});
+  auto &platform = platform::CurrentPlatform();
+  return FindYtDlpExecutable(platform.Files(),
+                             platform.UpdateEnvironmentInfo());
 }
 
 } // namespace termify::core

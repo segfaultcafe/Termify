@@ -55,8 +55,8 @@ if ! grep -qx 'Terminal=true' "$APPDIR/termify.desktop"; then
   echo "The AppImage desktop entry must launch inside a terminal." >&2
   exit 1
 fi
-if ! grep -q 'TERMIFY_YTDLP' "$APPDIR/AppRun"; then
-  echo "AppRun does not select the bundled yt-dlp executable." >&2
+if grep -q 'TERMIFY_YTDLP' "$APPDIR/AppRun"; then
+  echo "AppRun overrides Termify's independently updated yt-dlp." >&2
   exit 1
 fi
 if ! grep -q 'usr/bin.*PATH' "$APPDIR/AppRun"; then

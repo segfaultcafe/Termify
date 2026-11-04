@@ -1,0 +1,113 @@
+name: Publish independent yt-dlp update
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Official stable yt-dlp version (for example 2026.10.26)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: yt-dlp-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      YTDLP_VERSION: ${{ inputs.version }}
+      YTDLP_SIGNING_FINGERPRINT: AC0CBBE6848D6A873464AF4E57CF65933B5A7581
+    steps:
+      - name: Check out trusted release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate version and refuse replacement
+        run: |
+          if [[ ! "$YTDLP_VERSION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[1-9][0-9]*)?$ ]]; then
+            echo "Invalid stable yt-dlp version: $YTDLP_VERSION" >&2
+            exit 1
+          fi
+          tag="yt-dlp-v${YTDLP_VERSION}"
+          if git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1 ||
+             gh release view "$tag" --json id >/dev/null 2>&1; then
+            echo "The independent update $tag already exists." >&2
+            exit 1
+          fi
+
+      - name: Verify official checksum signature and package assets
+        run: |
+          set -euo pipefail
+          source scripts/yt-dlp.sh
+          upstream="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}"
+          key_url="https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/public.key"
+          mkdir -p upstream release-assets "$RUNNER_TEMP/yt-dlp-gnupg"
+          chmod 0700 "$RUNNER_TEMP/yt-dlp-gnupg"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 2 \
+            "$key_url" --output upstream/public.key
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 2 \
+            "$upstream/SHA2-256SUMS" --output upstream/SHA2-256SUMS
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 2 \
+            "$upstream/SHA2-256SUMS.sig" --output upstream/SHA2-256SUMS.sig
+
+          fingerprint="$(gpg --batch --homedir "$RUNNER_TEMP/yt-dlp-gnupg" \
+            --show-keys --with-colons upstream/public.key |
+            awk -F: '$1 == "fpr" { print $10; exit }')"
+          test "$fingerprint" = "$YTDLP_SIGNING_FINGERPRINT"
+          gpg --batch --homedir "$RUNNER_TEMP/yt-dlp-gnupg" \
+            --import upstream/public.key
+          gpg --batch --homedir "$RUNNER_TEMP/yt-dlp-gnupg" \
+            --verify upstream/SHA2-256SUMS.sig upstream/SHA2-256SUMS
+
+          upstream_assets=(yt-dlp_linux yt-dlp_linux_aarch64 yt-dlp_macos)
+          release_assets=(
+            "termify-yt-dlp-${YTDLP_VERSION}-linux-x86_64"
+            "termify-yt-dlp-${YTDLP_VERSION}-linux-arm64"
+            "termify-yt-dlp-${YTDLP_VERSION}-macos-universal"
+          )
+          for index in "${!upstream_assets[@]}"; do
+            source_name="${upstream_assets[$index]}"
+            destination="release-assets/${release_assets[$index]}"
+            matches="$(awk -v name="$source_name" '$2 == name { print $1 }' \
+              upstream/SHA2-256SUMS)"
+            test "$(wc -w <<<"$matches")" -eq 1
+            curl --proto '=https' --tlsv1.2 --fail --location --retry 2 \
+              "$upstream/$source_name" --output "$destination"
+            termify_verify_sha256 "$matches" "$destination"
+            chmod 0755 "$destination"
+          done
+          test "$(release-assets/termify-yt-dlp-${YTDLP_VERSION}-linux-x86_64 --version)" = \
+            "$YTDLP_VERSION"
+          (cd release-assets && sha256sum termify-yt-dlp-* >SHA256SUMS)
+          (cd release-assets && sha256sum --check SHA256SUMS)
+
+      - name: Attest update executables and checksum manifest
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            release-assets/termify-yt-dlp-*
+            release-assets/SHA256SUMS
+
+      - name: Publish audited prerelease channel entry
+        run: |
+          tag="yt-dlp-v${YTDLP_VERSION}"
+          notes="Independent yt-dlp ${YTDLP_VERSION} update for Termify.
+
+          The official yt-dlp checksum signature was verified against pinned
+          signing-key fingerprint ${YTDLP_SIGNING_FINGERPRINT}. Termify verifies
+          these repackaged executables with GitHub provenance and SHA-256 before
+          installation. This prerelease does not change the latest stable
+          Termify application release."
+          gh release create "$tag" release-assets/* \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Termify yt-dlp ${YTDLP_VERSION}" \
+            --notes "$notes"
