@@ -1,5 +1,6 @@
 #include "App/Application.hpp"
 #include "Core/UpdateChecker.hpp"
+#include "Core/UpdateDownloader.hpp"
 #include "Platform/Services.hpp"
 #include <cstdlib>
 #include <exception>
@@ -9,12 +10,13 @@ namespace {
 void printHelp() {
   std::cout
       << "Usage: termify [OPTION]\n"
-      << "       termify update --check\n"
+      << "       termify update <--check|--download>\n"
       << "A terminal audio player for local files and online searches.\n\n"
       << "Options:\n"
       << "  -h, --help       Show this help and exit\n"
       << "  -V, --version    Show the version and exit\n"
-      << "  update --check   Check for a newer stable release\n\n"
+      << "  update --check     Check for a newer stable release\n"
+      << "  update --download  Download and verify a stable update\n\n"
       << "Interactive commands:\n"
       << "  play <song|URL|file>  pause  resume  next  repeat\n"
       << "  volume <0-100|+N|-N>  seek <seconds|M:SS>\n"
@@ -36,13 +38,25 @@ int main(int argc, char **argv) {
       return EXIT_SUCCESS;
     }
     if (argc == 3 && option == "update" &&
-        std::string(argv[2]) == "--check") {
+        (std::string(argv[2]) == "--check" ||
+         std::string(argv[2]) == "--download")) {
       try {
         auto &platform = termify::platform::CurrentPlatform();
         termify::core::UpdateChecker checker(platform.Processes(),
                                              platform.Files());
-        std::cout << termify::core::UpdateChecker::Format(
-            checker.Check(TERMIFY_VERSION));
+        const auto result = checker.Check(TERMIFY_VERSION);
+        if (std::string(argv[2]) == "--check" ||
+            result.state != termify::core::UpdateState::Available) {
+          std::cout << termify::core::UpdateChecker::Format(result);
+          return EXIT_SUCCESS;
+        }
+        termify::core::UpdateDownloader downloader(platform.Processes(),
+                                                   platform.Files());
+        const auto prepared =
+            downloader.Prepare(result, platform.UpdateEnvironmentInfo());
+        std::cout << "Verified Termify v" << prepared.version.String()
+                  << " update at " << prepared.path << "\n"
+                  << "No files were installed.\n";
         return EXIT_SUCCESS;
       } catch (const std::exception &error) {
         std::cerr << "termify: " << error.what() << '\n';
@@ -50,7 +64,7 @@ int main(int argc, char **argv) {
       }
     }
     if (option == "update") {
-      std::cerr << "termify: usage: termify update --check\n";
+      std::cerr << "termify: usage: termify update <--check|--download>\n";
       return EXIT_FAILURE;
     }
     std::cerr << "termify: unknown option '" << option

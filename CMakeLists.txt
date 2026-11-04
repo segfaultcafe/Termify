@@ -90,6 +90,17 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic)
   add_test(NAME update_checker COMMAND update_checker_tests)
 
+  add_executable(update_downloader_tests
+    tests/UpdateDownloaderTests.cpp
+    src/Core/Sha256.cpp
+    src/Core/UpdateChecker.cpp
+    src/Core/UpdateDownloader.cpp
+  )
+  target_include_directories(update_downloader_tests PRIVATE src)
+  target_compile_options(update_downloader_tests PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME update_downloader COMMAND update_downloader_tests)
+
   add_executable(tui_foundation_tests
     tests/TuiFoundationTests.cpp
     src/Tui/Canvas.cpp
