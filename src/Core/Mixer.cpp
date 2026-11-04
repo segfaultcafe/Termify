@@ -79,7 +79,7 @@ bool Mixer::prioritizeNext(string song, string title, bool playNow) {
     Stop(true, false);
     dispatchResponse("Playing now: " + displayName);
   } else {
-    _schedulerCv.notify_one();
+    wakeScheduler();
     if (outcome.result == QueueNextResult::AlreadyNext) {
       dispatchResponse("Already next: " + displayName);
     } else if (outcome.result == QueueNextResult::Moved) {
@@ -88,7 +88,7 @@ bool Mixer::prioritizeNext(string song, string title, bool playNow) {
       dispatchResponse("Playing next: " + displayName);
     }
   }
-  _prefetchCv.notify_one();
+  wakePrefetch();
   return true;
 }
 
@@ -168,8 +168,8 @@ bool Mixer::SetPlaylistLoop(std::int64_t playlistId, bool enabled) {
   } else {
     replenishPlaylistQueue();
   }
-  _schedulerCv.notify_one();
-  _prefetchCv.notify_one();
+  wakeScheduler();
+  wakePrefetch();
   return true;
 }
 
@@ -230,7 +230,7 @@ void Mixer::Stop(bool force, bool clearQueue) {
     }
     // PlayNow queues its target before stopping the current track. When the
     // mixer was already idle, this is the notification that starts it.
-    _schedulerCv.notify_one();
+    wakeScheduler();
     return;
   }
 
@@ -263,7 +263,7 @@ void Mixer::Stop(bool force, bool clearQueue) {
     dispatchResponse("Playback stopped and the queue was cleared.");
   }
 
-  _schedulerCv.notify_one();
+  wakeScheduler();
   _ctx.ringBufferCtx->ringCv.notify_all();
 }
 
@@ -278,7 +278,7 @@ bool Mixer::PlayQueuedNow(uint64 id) {
   const string displayName = song->title.empty() ? song->query : song->title;
   Stop(true, false);
   dispatchResponse("Playing now: " + displayName);
-  _prefetchCv.notify_one();
+  wakePrefetch();
   return true;
 }
 
@@ -292,8 +292,8 @@ bool Mixer::RemoveQueued(uint64 id) {
   cleanupPrepared(*song);
   replenishPlaylistQueue();
   dispatchResponse("Removed from queue: " + displayName);
-  _schedulerCv.notify_one();
-  _prefetchCv.notify_one();
+  wakeScheduler();
+  wakePrefetch();
   return true;
 }
 
@@ -328,8 +328,8 @@ void Mixer::clearQueue(bool cancelPlaylist) {
   for (const auto &song : _ctx.trackQueue->Clear()) {
     cleanupPrepared(song);
   }
-  _schedulerCv.notify_one();
-  _prefetchCv.notify_one();
+  wakeScheduler();
+  wakePrefetch();
 }
 
 bool Mixer::queuePlaylistCycle() {
@@ -362,8 +362,8 @@ bool Mixer::queuePlaylistCycle() {
     _playlistAppendOrder.clear();
     _playlistAppendIndex = 0;
   }
-  _schedulerCv.notify_one();
-  _prefetchCv.notify_one();
+  wakeScheduler();
+  wakePrefetch();
   return true;
 }
 
@@ -411,8 +411,8 @@ void Mixer::replenishPlaylistQueue(std::size_t minimum) {
     added = true;
   }
   if (added) {
-    _schedulerCv.notify_one();
-    _prefetchCv.notify_one();
+    wakeScheduler();
+    wakePrefetch();
   }
 }
 
@@ -503,8 +503,8 @@ void Mixer::Shutdown() {
   _ctx.playbackCtx->gRunning.store(false);
   _prefetchCancel.store(true);
   ClearQueue();
-  _schedulerCv.notify_all();
-  _prefetchCv.notify_all();
+  wakeScheduler(true);
+  wakePrefetch(true);
   Stop(true, true);
 
   if (_schedulerThread.joinable() &&
@@ -522,6 +522,29 @@ void Mixer::Shutdown() {
 
 void Mixer::PublishMessage(const string &message, bool isError) {
   dispatchResponse(message, isError);
+}
+
+void Mixer::wakeScheduler(bool all) {
+  // Queue and playback state use their own locks. Crossing this mutex after a
+  // state change prevents a notification from landing between the scheduler's
+  // predicate check and its atomic transition into the wait state.
+  {
+    std::lock_guard lock(_schedulerMtx);
+  }
+  if (all)
+    _schedulerCv.notify_all();
+  else
+    _schedulerCv.notify_one();
+}
+
+void Mixer::wakePrefetch(bool all) {
+  {
+    std::lock_guard lock(_prefetchMtx);
+  }
+  if (all)
+    _prefetchCv.notify_all();
+  else
+    _prefetchCv.notify_one();
 }
 
 void Mixer::schedulerLoop() {
@@ -576,7 +599,7 @@ void Mixer::prefetchLoop() {
         _ctx.trackQueue->MarkFailed(song->id, error.what());
       }
     }
-    _schedulerCv.notify_one();
+    wakeScheduler();
     lock.lock();
   }
 }
@@ -597,7 +620,7 @@ void Mixer::startNext() {
   if (next->state == QueueState::Failed) {
     dispatchResponse("Could not prepare " + next->query + ": " + next->error,
                      true);
-    _schedulerCv.notify_one();
+    wakeScheduler();
     return;
   }
 
@@ -626,7 +649,7 @@ void Mixer::startNext() {
   _ctx.playbackCtx->durationFrames.store(0);
   _ctx.playbackCtx->seekTargetFrames.store(-1);
   dispatchResponse("Now playing: " + displayName);
-  _prefetchCv.notify_one();
+  wakePrefetch();
 
   _ctx.playbackCtx->playThread = std::thread([this, song] {
     bool failed = false;
@@ -683,7 +706,7 @@ void Mixer::startNext() {
     _ctx.playbackCtx->durationFrames.store(0);
     _ctx.playbackCtx->seekTargetFrames.store(-1);
     _ctx.ringBufferCtx->ringCv.notify_all();
-    _schedulerCv.notify_one();
+    wakeScheduler();
 
     if (!failed && !_ctx.playbackCtx->shouldStop.load()) {
       replenishPlaylistQueue();
