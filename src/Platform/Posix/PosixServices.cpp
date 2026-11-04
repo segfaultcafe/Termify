@@ -3,14 +3,17 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
 #include <poll.h>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -220,6 +223,96 @@ FileSystem::CreateLockedFile(const std::filesystem::path &directory,
     throw std::runtime_error("Could not lock a temporary file");
   }
   return {pattern, std::make_shared<Lease>(descriptor)};
+}
+
+std::filesystem::path
+FileSystem::CreatePrivateDirectory(const std::filesystem::path &directory,
+                                   const std::string &prefix) const {
+  std::string pattern = (directory / (prefix + "-XXXXXX")).string();
+  if (!mkdtemp(pattern.data()))
+    throw std::runtime_error("Could not create a private temporary directory");
+  if (chmod(pattern.c_str(), 0700) != 0) {
+    std::error_code cleanupError;
+    std::filesystem::remove(pattern, cleanupError);
+    throw std::runtime_error("Could not secure a private temporary directory");
+  }
+  return pattern;
+}
+
+void FileSystem::ReplaceFileAtomically(const std::filesystem::path &source,
+                                       const std::filesystem::path &destination,
+                                       bool executable) const {
+  const int sourceDescriptor =
+      open(source.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  if (sourceDescriptor < 0)
+    throw std::runtime_error("Could not read an update file");
+
+  struct stat status{};
+  if (fstat(sourceDescriptor, &status) != 0 || !S_ISREG(status.st_mode)) {
+    close(sourceDescriptor);
+    throw std::runtime_error("An update file is not a regular file");
+  }
+
+  std::string temporary =
+      (destination.parent_path() / ".termify-replace-XXXXXX").string();
+  const int destinationDescriptor = mkstemp(temporary.data());
+  if (destinationDescriptor < 0) {
+    close(sourceDescriptor);
+    throw std::runtime_error("Could not create an atomic update file");
+  }
+
+  bool succeeded = true;
+  std::array<char, 64 * 1024> buffer{};
+  while (succeeded) {
+    const ssize_t count = read(sourceDescriptor, buffer.data(), buffer.size());
+    if (count == 0)
+      break;
+    if (count < 0) {
+      if (errno == EINTR)
+        continue;
+      succeeded = false;
+      break;
+    }
+    std::size_t offset = 0;
+    while (offset < static_cast<std::size_t>(count)) {
+      const ssize_t written =
+          write(destinationDescriptor, buffer.data() + offset,
+                static_cast<std::size_t>(count) - offset);
+      if (written > 0) {
+        offset += static_cast<std::size_t>(written);
+      } else if (written < 0 && errno == EINTR) {
+        continue;
+      } else {
+        succeeded = false;
+        break;
+      }
+    }
+  }
+
+  const mode_t mode = executable ? 0700 : 0600;
+  if (succeeded && fchmod(destinationDescriptor, mode) != 0)
+    succeeded = false;
+  if (succeeded && fsync(destinationDescriptor) != 0)
+    succeeded = false;
+  if (close(sourceDescriptor) != 0)
+    succeeded = false;
+  if (close(destinationDescriptor) != 0)
+    succeeded = false;
+  if (succeeded && rename(temporary.c_str(), destination.c_str()) != 0)
+    succeeded = false;
+
+  if (!succeeded) {
+    std::error_code cleanupError;
+    std::filesystem::remove(temporary, cleanupError);
+    throw std::runtime_error("Could not replace an update file atomically");
+  }
+
+  const int directoryDescriptor = open(destination.parent_path().c_str(),
+                                       O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+  if (directoryDescriptor >= 0) {
+    fsync(directoryDescriptor);
+    close(directoryDescriptor);
+  }
 }
 
 struct TerminalDriver::State {

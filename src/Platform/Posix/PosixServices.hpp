@@ -28,6 +28,12 @@ public:
   TryLock(const std::filesystem::path &path, FileLockMode mode) const override;
   LockedFile CreateLockedFile(const std::filesystem::path &directory,
                               const std::string &prefix) const override;
+  std::filesystem::path
+  CreatePrivateDirectory(const std::filesystem::path &directory,
+                         const std::string &prefix) const override;
+  void ReplaceFileAtomically(const std::filesystem::path &source,
+                             const std::filesystem::path &destination,
+                             bool executable) const override;
 
 protected:
   virtual std::vector<std::filesystem::path>

@@ -25,12 +25,14 @@ leaves the terminal or system in a broken state.
 - Provide `termify update --check` to report available stable releases without
   making changes. Implemented for the v0.8 milestone.
 - Provide an explicit `termify update` flow for user-local and AppImage
-  installations; never update silently in the background.
+  installations; never update silently in the background. Implemented for the
+  v0.8 milestone.
 - Verify downloaded artifacts with published checksums and release signatures
   before installation. Implemented as a non-installing verified staging step
   for the v0.8 milestone.
 - Replace executables atomically, retain the previous working version, and
-  support a simple rollback after a failed update.
+  support a simple rollback after a failed update. Implemented for the v0.8
+  milestone for AppImage and user-local archive installations.
 - Update the bundled yt-dlp independently when extractor fixes are needed,
   without requiring a full Termify release.
 - Detect package-managed installations and direct users to their package
@@ -91,8 +93,9 @@ leaves the terminal or system in a broken state.
   version tags with generated notes, complete package smoke checks, SHA-256
   manifests, keyless build provenance, and self-contained Linux x86_64 and
   ARM64 AppImages, a read-only stable-release update check, and attested,
-  checksum-verified artifact staging. Next, add atomic replacement and
-  rollback, and package tests on clean supported distributions.
+  checksum-verified artifact staging, atomic replacement, and rollback. Next,
+  add native package recipes and package tests on clean supported
+  distributions.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a

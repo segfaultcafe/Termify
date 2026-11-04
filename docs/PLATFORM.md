@@ -24,6 +24,13 @@ or in a known package-managed location. Update selection therefore remains
 free of OS preprocessor branches and cannot accidentally overwrite a managed
 package.
 
+The filesystem boundary also creates private temporary directories and
+performs same-filesystem atomic file replacement. POSIX implementations copy
+and sync a private sibling file before renaming it over the destination. The
+updater can therefore use one transaction design on Linux and macOS without OS
+conditionals in core code; a future Windows implementation can provide its
+native replacement semantics behind the same operation.
+
 `CurrentPlatform()` is the composition root. Exactly one OS implementation
 defines it in each build. Core code sees only the interfaces; CMake is the one
 place that chooses the implementation sources and native libraries.
