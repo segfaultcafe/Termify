@@ -175,6 +175,21 @@ the required network client. Native archives and source builds use `curl` from
 `PATH`. See [docs/UPDATES.md](docs/UPDATES.md) for the security and behavior
 contract.
 
+Download a newer stable release into Termify's private update cache without
+installing it:
+
+```bash
+termify update --download
+```
+
+Termify selects the artifact for the running OS, CPU architecture, and
+installation type. It requires GitHub CLI (`gh`) to verify the keyless
+GitHub/Sigstore provenance of both `SHA256SUMS` and the artifact, then performs
+an independent SHA-256 comparison before retaining either file. Package-managed
+installations are refused and must be updated through their package manager.
+This command only stages verified files; atomic installation and rollback are
+the next updater milestone.
+
 ### Linux distribution setup
 
 The following dependencies apply to the native Linux archive. The AppImage

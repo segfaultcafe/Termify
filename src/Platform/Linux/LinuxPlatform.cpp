@@ -3,11 +3,34 @@
 #include <alsa/asoundlib.h>
 #include <array>
 #include <cerrno>
+#include <cstdlib>
 #include <stdexcept>
+#include <string_view>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 namespace termify::platform {
 namespace {
+
+bool pathStartsWith(const std::filesystem::path &path,
+                    std::string_view prefix) {
+  const auto value = path.string();
+  return value == prefix ||
+         (value.size() > prefix.size() && value.starts_with(prefix) &&
+          value[prefix.size()] == '/');
+}
+
+ReleaseArchitecture releaseArchitecture() {
+  utsname system{};
+  if (uname(&system) != 0)
+    return ReleaseArchitecture::Unsupported;
+  const std::string_view machine(system.machine);
+  if (machine == "x86_64" || machine == "amd64")
+    return ReleaseArchitecture::X86_64;
+  if (machine == "aarch64" || machine == "arm64")
+    return ReleaseArchitecture::Arm64;
+  return ReleaseArchitecture::Unsupported;
+}
 
 class LinuxFileSystem final : public posix::FileSystem {
 public:
@@ -95,6 +118,29 @@ class LinuxPlatform final : public PlatformServices {
 public:
   platform::ProcessRunner &Processes() override { return _processes; }
   platform::FileSystem &Files() override { return _files; }
+
+  UpdateEnvironment UpdateEnvironmentInfo() const override {
+    const auto executable = _files.ExecutableDirectory() / "termify";
+    if (const char *appImage = std::getenv("APPIMAGE");
+        appImage && *appImage && std::filesystem::path(appImage).is_absolute()) {
+      return {ReleasePlatform::Linux, releaseArchitecture(),
+              InstallationKind::AppImage, appImage};
+    }
+    const auto canonical = std::filesystem::weakly_canonical(executable);
+    const bool managed =
+        pathStartsWith(canonical, "/usr/bin") ||
+        pathStartsWith(canonical, "/bin") ||
+        pathStartsWith(canonical, "/usr/sbin") ||
+        pathStartsWith(canonical, "/sbin") ||
+        pathStartsWith(canonical, "/snap") ||
+        pathStartsWith(canonical, "/var/lib/flatpak") ||
+        pathStartsWith(canonical, "/app") ||
+        pathStartsWith(canonical, "/nix/store");
+    return {ReleasePlatform::Linux, releaseArchitecture(),
+            managed ? InstallationKind::PackageManaged
+                    : InstallationKind::UserLocal,
+            canonical};
+  }
 
   std::unique_ptr<TerminalDriver>
   CreateTerminal(int inputDescriptor, int outputDescriptor) override {

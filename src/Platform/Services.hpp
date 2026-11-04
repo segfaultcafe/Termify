@@ -100,6 +100,17 @@ struct AudioOutputConfig {
   int channels{1};
 };
 
+enum class ReleasePlatform { Linux, MacOS };
+enum class ReleaseArchitecture { X86_64, Arm64, Unsupported };
+enum class InstallationKind { AppImage, UserLocal, PackageManaged };
+
+struct UpdateEnvironment {
+  ReleasePlatform platform{ReleasePlatform::Linux};
+  ReleaseArchitecture architecture{ReleaseArchitecture::Unsupported};
+  InstallationKind installation{InstallationKind::UserLocal};
+  std::filesystem::path executable;
+};
+
 class AudioOutput {
 public:
   virtual ~AudioOutput() = default;
@@ -114,6 +125,7 @@ public:
   virtual ~PlatformServices() = default;
   virtual ProcessRunner &Processes() = 0;
   virtual FileSystem &Files() = 0;
+  virtual UpdateEnvironment UpdateEnvironmentInfo() const = 0;
   virtual std::unique_ptr<TerminalDriver>
   CreateTerminal(int inputDescriptor, int outputDescriptor) = 0;
   virtual std::unique_ptr<AudioOutput>

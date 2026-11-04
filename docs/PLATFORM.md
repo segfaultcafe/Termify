@@ -18,6 +18,12 @@ composition for a complete platform:
 - `PlatformServices` composes those capabilities and installs the native
   interrupt behavior.
 
+The platform boundary also reports the release platform, release architecture,
+current executable, and whether the installation is an AppImage, user-local,
+or in a known package-managed location. Update selection therefore remains
+free of OS preprocessor branches and cannot accidentally overwrite a managed
+package.
+
 `CurrentPlatform()` is the composition root. Exactly one OS implementation
 defines it in each build. Core code sees only the interfaces; CMake is the one
 place that chooses the implementation sources and native libraries.

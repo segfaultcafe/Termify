@@ -89,6 +89,10 @@ class TestPlatform final : public termify::platform::PlatformServices {
 public:
   termify::platform::ProcessRunner &Processes() override { return _processes; }
   termify::platform::FileSystem &Files() override { return _files; }
+  termify::platform::UpdateEnvironment
+  UpdateEnvironmentInfo() const override {
+    return {};
+  }
   std::unique_ptr<termify::platform::TerminalDriver>
   CreateTerminal(int, int) override {
     return std::make_unique<TestTerminal>();

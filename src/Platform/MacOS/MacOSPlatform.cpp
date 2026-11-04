@@ -9,9 +9,31 @@
 #include <mach-o/dyld.h>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
+#include <sys/utsname.h>
 
 namespace termify::platform {
 namespace {
+
+bool pathStartsWith(const std::filesystem::path &path,
+                    std::string_view prefix) {
+  const auto value = path.string();
+  return value == prefix ||
+         (value.size() > prefix.size() && value.starts_with(prefix) &&
+          value[prefix.size()] == '/');
+}
+
+ReleaseArchitecture releaseArchitecture() {
+  utsname system{};
+  if (uname(&system) != 0)
+    return ReleaseArchitecture::Unsupported;
+  const std::string_view machine(system.machine);
+  if (machine == "x86_64" || machine == "amd64")
+    return ReleaseArchitecture::X86_64;
+  if (machine == "arm64" || machine == "aarch64")
+    return ReleaseArchitecture::Arm64;
+  return ReleaseArchitecture::Unsupported;
+}
 
 std::filesystem::path homeDirectory() {
   const char *home = std::getenv("HOME");
@@ -202,6 +224,22 @@ class MacOSPlatform final : public PlatformServices {
 public:
   platform::ProcessRunner &Processes() override { return _processes; }
   platform::FileSystem &Files() override { return _files; }
+
+  UpdateEnvironment UpdateEnvironmentInfo() const override {
+    const auto executable =
+        std::filesystem::weakly_canonical(_files.ExecutableDirectory() /
+                                          "termify");
+    const bool managed =
+        pathStartsWith(executable, "/usr/bin") ||
+        pathStartsWith(executable, "/System") ||
+        pathStartsWith(executable, "/opt/homebrew/Cellar") ||
+        pathStartsWith(executable, "/usr/local/Cellar") ||
+        pathStartsWith(executable, "/opt/local");
+    return {ReleasePlatform::MacOS, releaseArchitecture(),
+            managed ? InstallationKind::PackageManaged
+                    : InstallationKind::UserLocal,
+            executable};
+  }
 
   std::unique_ptr<TerminalDriver>
   CreateTerminal(int inputDescriptor, int outputDescriptor) override {

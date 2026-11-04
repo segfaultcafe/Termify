@@ -18,8 +18,30 @@ The AppImage includes a private curl executable and its dependency closure.
 Native archive and source installations use `curl` from `PATH`; install the
 distribution's curl package if the command reports that it is unavailable.
 
-This check does not weaken the release trust model. Before installing a future
-update, Termify must verify the downloaded artifact against the attested
-`SHA256SUMS` manifest described in [RELEASE.md](RELEASE.md). Automatic download,
-atomic replacement, and rollback are separate milestones and are not performed
-by `update --check`.
+## Verified downloads
+
+`termify update --download` stages the correct stable-release artifact for the
+running operating system, architecture, and installation type. It writes only
+to the private Termify update cache (`$XDG_CACHE_HOME/termify/updates` on Linux
+or `~/Library/Caches/termify/updates` on macOS). A completed command retains the
+artifact and its `SHA256SUMS` manifest and prints the artifact path. It does not
+extract, execute, or install the download.
+
+The command requires `gh` from GitHub CLI in `PATH`. It verifies both the
+manifest and artifact against attestations issued for
+`segfaultcafe/Termify`, the tag ref, and Termify's tag-only release workflow.
+Attestations from self-hosted runners are rejected. Termify then hashes the
+artifact internally and requires an exact match with its single entry in the
+verified manifest. Downloads use HTTPS-only redirects, size and time limits,
+private randomly named partial files, and atomic staging.
+Any failed download, provenance check, manifest parse, or checksum comparison
+removes the partial files and returns nonzero.
+
+AppImage and user-local/native-archive installations receive their matching
+portable artifact. Known package-managed locations are refused so Termify does
+not bypass `.deb`, `.rpm`, AUR, Homebrew, MacPorts, Flatpak, Snap, or Nix
+ownership. Those installations must be updated with their package manager.
+
+The full trust model is described in [RELEASE.md](RELEASE.md). Automatic
+installation, atomic replacement, and rollback are separate milestones and are
+not performed by either update command.
