@@ -93,9 +93,11 @@ leaves the terminal or system in a broken state.
   version tags with generated notes, complete package smoke checks, SHA-256
   manifests, keyless build provenance, and self-contained Linux x86_64 and
   ARM64 AppImages, a read-only stable-release update check, and attested,
-  checksum-verified artifact staging, atomic replacement, and rollback. Next,
-  add native package recipes and package tests on clean supported
-  distributions.
+  checksum-verified artifact staging, atomic replacement, and rollback. Native
+  `.deb` packages are built, installed, started, update-guarded, and removed on
+  clean Debian 12 and Ubuntu 24.04 runners for amd64 and arm64. RPM, AUR, and
+  broader distribution packages remain v1 portability work where they improve
+  integration.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a

@@ -22,6 +22,8 @@ CI must build, test, start, package, checksum, install, and run `--version` for:
 - Linux `arm64` on a native `aarch64` runner
 - Linux `x86_64` AppImage built against the Debian 12 glibc baseline
 - Linux `arm64` AppImage built against the Debian 12 glibc baseline
+- Debian 12 `.deb` on `amd64` and `arm64`
+- Ubuntu 24.04 `.deb` on `amd64` and `arm64`
 - macOS Intel `x86_64`
 - macOS Apple Silicon `arm64`
 
@@ -61,7 +63,10 @@ GitHub release notes.
   is built natively on Ubuntu 24.04. Self-contained AppImages for both Linux
   architectures are produced separately on Debian 12, verify their bundled
   dependency closure, and start on clean native Ubuntu runners without
-  requiring FUSE. Every package also requires the architecture-matched bundled
+  requiring FUSE. Distribution-native `.deb` packages are built separately
+  against Debian 12 and Ubuntu 24.04 for amd64 and arm64, then installed,
+  started, checked for package-manager-safe updates, and removed in clean
+  containers. Every package also requires the architecture-matched bundled
   yt-dlp to report the pinned version.
 - The workflow creates keyless Sigstore-backed GitHub artifact attestations for
   every archive, per-archive checksum, and the aggregate `SHA256SUMS` manifest.
@@ -101,6 +106,10 @@ gh attestation verify "termify-${TAG}-linux-x86_64.tar.gz" \
   --signer-workflow "$WORKFLOW" \
   --source-ref "refs/tags/$TAG"
 gh attestation verify "termify-${TAG}-linux-x86_64.AppImage" \
+  --repo "$REPOSITORY" \
+  --signer-workflow "$WORKFLOW" \
+  --source-ref "refs/tags/$TAG"
+gh attestation verify "termify-${TAG}-debian12-amd64.deb" \
   --repo "$REPOSITORY" \
   --signer-workflow "$WORKFLOW" \
   --source-ref "refs/tags/$TAG"

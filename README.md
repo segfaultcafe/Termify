@@ -66,6 +66,23 @@ Release archives include Termify plus the verified official standalone
 `yt-dlp` 2026.10.26 executable. Python and a separate yt-dlp installation are
 not required.
 
+### Debian 12 and Ubuntu 24.04 packages (v0.8.0 and newer)
+
+Download the `.deb` matching both the operating system and architecture, then
+verify and install it with APT. For example, on 64-bit Ubuntu 24.04:
+
+```bash
+sha256sum -c termify-v0.8.0-ubuntu24.04-amd64.deb.sha256
+sudo apt install ./termify-v0.8.0-ubuntu24.04-amd64.deb
+termify
+```
+
+Debian 12 packages use `debian12` in the filename. ARM64 packages use `arm64`
+instead of `amd64`. APT installs the exact runtime library dependencies
+recorded when the package was built; the verified standalone yt-dlp executable
+is included. Package installations are updated or removed through APT and
+intentionally refuse Termify's self-update commands.
+
 ### Linux x86_64 and ARM64 AppImage (v0.8.0 and newer)
 
 The AppImage is the portable Linux distribution. It bundles Termify, yt-dlp,
@@ -142,8 +159,9 @@ writable, it safely falls back to placing yt-dlp beside the Termify executable.
 ### Verify an automated release
 
 Starting with the v0.8 release pipeline, stable tags build and publish the
-native archives and Linux AppImage automatically. Each artifact, checksum, and
-aggregate `SHA256SUMS` manifest receives keyless GitHub/Sigstore provenance.
+native archives, Linux AppImages, and Debian/Ubuntu packages automatically.
+Each artifact, checksum, and aggregate `SHA256SUMS` manifest receives keyless
+GitHub/Sigstore provenance.
 Verify the manifest before trusting its digests:
 
 ```bash
@@ -210,9 +228,10 @@ installations remain owned by their package manager and refuse both commands.
 
 ### Linux distribution setup
 
-The following dependencies apply to the native Linux archive. The AppImage
-already bundles these userspace libraries. Termify uses FFmpeg for decoding,
-ALSA for audio output, and SQLite for local storage.
+The following dependencies apply to the native Linux archive. APT resolves
+them automatically for the `.deb`, and the AppImage already bundles these
+userspace libraries. Termify uses FFmpeg for decoding, ALSA for audio output,
+and SQLite for local storage.
 
 **Arch Linux / Manjaro**
 
@@ -483,6 +502,7 @@ make run
 make test       # rebuild and run the test suite
 make package    # create a tested native release archive and checksum
 make appimage   # create and test an AppImage for this Linux architecture
+make deb        # create a native Debian/Ubuntu package and checksum
 make install    # build, test, and install to /usr/local/bin
 ```
 
