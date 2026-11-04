@@ -102,6 +102,9 @@ leaves the terminal or system in a broken state.
   private installation and rollback. RPM, AUR, and
   broader distribution packages remain v1 portability work where they improve
   integration.
+- **v0.8.1 — Updater validation patch (released):** keep the yt-dlp installer
+  fallback concise and validate the signed, atomic `termify update` path from
+  v0.8.0 to v0.8.1 on a real user-local installation.
 - **v0.9 — Stabilization:** freeze commands and configuration, finish the
   documentation, and focus on compatibility and bug fixes.
 - **v1.0 — Supported release:** meet every release gate above and publish a

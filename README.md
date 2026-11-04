@@ -60,10 +60,14 @@ and Ubuntu packages, automated releases with signed provenance and checksums,
 and `termify update` with atomic replacement and rollback. Bundled yt-dlp can
 now be updated independently through its own verified release channel.
 
+**v0.8.1** makes the release installer's documented yt-dlp fallback concise:
+when the private library directory is unavailable, it reports the fallback
+destination without also leaking the redundant low-level filesystem error.
+
 **v0.3.1** fixes playlist advancement with `next`, preserves playlist loops,
 and prioritizes manually queued tracks without ending the playlist session.
 
-The latest packaged release is **v0.8.0**.
+The latest packaged release is **v0.8.1**.
 
 ## Install a release
 
@@ -77,8 +81,8 @@ Download the `.deb` matching both the operating system and architecture, then
 verify and install it with APT. For example, on 64-bit Ubuntu 24.04:
 
 ```bash
-sha256sum -c termify-v0.8.0-ubuntu24.04-amd64.deb.sha256
-sudo apt install ./termify-v0.8.0-ubuntu24.04-amd64.deb
+sha256sum -c termify-v0.8.1-ubuntu24.04-amd64.deb.sha256
+sudo apt install ./termify-v0.8.1-ubuntu24.04-amd64.deb
 termify
 ```
 
@@ -95,9 +99,9 @@ FFmpeg, SQLite, ALSA's userspace library, and their non-system dependency
 closure. Download the AppImage and checksum from the matching GitHub release:
 
 ```bash
-sha256sum -c termify-v0.8.0-linux-x86_64.AppImage.sha256
-chmod +x termify-v0.8.0-linux-x86_64.AppImage
-./termify-v0.8.0-linux-x86_64.AppImage
+sha256sum -c termify-v0.8.1-linux-x86_64.AppImage.sha256
+chmod +x termify-v0.8.1-linux-x86_64.AppImage
+./termify-v0.8.1-linux-x86_64.AppImage
 ```
 
 On an ARM64 system, replace `x86_64` with `arm64`. Both architectures are
@@ -109,22 +113,22 @@ baseline while providing the FFmpeg channel-layout API Termify requires. If
 FUSE is unavailable, run it without mounting:
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./termify-v0.8.0-linux-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./termify-v0.8.1-linux-x86_64.AppImage
 ```
 
 ### Linux x86_64 and ARM64 native archive
 
 Download the native archive and checksum for your architecture from the
-[v0.8.0 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.8.0).
+[v0.8.1 GitHub release](https://github.com/segfaultcafe/Termify/releases/tag/v0.8.1).
 
 ```bash
-sha256sum -c termify-v0.8.0-linux-x86_64.tar.gz.sha256
-tar -xzf termify-v0.8.0-linux-x86_64.tar.gz
-cd termify-v0.8.0-linux-x86_64
+sha256sum -c termify-v0.8.1-linux-x86_64.tar.gz.sha256
+tar -xzf termify-v0.8.1-linux-x86_64.tar.gz
+cd termify-v0.8.1-linux-x86_64
 ./install.sh
 ```
 
-ARM64 releases use the corresponding `termify-v0.8.0-linux-arm64.tar.gz`
+ARM64 releases use the corresponding `termify-v0.8.1-linux-arm64.tar.gz`
 archive. The architecture name is `arm64` even though Linux may report the
 native machine as `aarch64`.
 
@@ -135,15 +139,15 @@ Install the runtime libraries with Homebrew, then download the archive matching
 
 ```bash
 brew install ffmpeg sqlite
-shasum -a 256 -c termify-v0.8.0-macos-arm64.tar.gz.sha256
-tar -xzf termify-v0.8.0-macos-arm64.tar.gz
-cd termify-v0.8.0-macos-arm64
+shasum -a 256 -c termify-v0.8.1-macos-arm64.tar.gz.sha256
+tar -xzf termify-v0.8.1-macos-arm64.tar.gz
+cd termify-v0.8.1-macos-arm64
 ./install.sh
 ```
 
 Replace `arm64` with `x86_64` in those commands on an Intel Mac.
 
-The v0.8.0 macOS archives are not code-signed or notarized. If macOS prevents
+The v0.8.1 macOS archives are not code-signed or notarized. If macOS prevents
 the downloaded binary from opening, build Termify from source using the
 instructions below. Signed and notarized distribution remains future work.
 
@@ -170,7 +174,7 @@ GitHub/Sigstore provenance.
 Verify the manifest before trusting its digests:
 
 ```bash
-TAG=v0.8.0
+TAG=v0.8.1
 gh attestation verify SHA256SUMS \
   --repo segfaultcafe/Termify \
   --signer-workflow segfaultcafe/Termify/.github/workflows/release.yml \
@@ -387,7 +391,7 @@ next
   pending work, and closes Termify through the same clean shutdown path as the
   `quit` command.
 - The frame title shows the build version, for example
-  `TERMIFY - terminal audio player - v0.8.0`.
+  `TERMIFY - terminal audio player - v0.8.1`.
 - Use **Alt+Left / Alt+Right** or click a tab to switch views.
 - **Tab / Shift+Tab** cycles focus. Left/right arrows switch tabs when the tab
   bar is focused; **Esc** returns to the command prompt.

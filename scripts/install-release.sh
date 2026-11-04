@@ -23,7 +23,7 @@ fi
 
 install_executable "$PACKAGE_DIR/termify" "$INSTALL_PREFIX/bin/termify"
 YTDLP_TARGET="$INSTALL_PREFIX/lib/termify/yt-dlp"
-if ! install_executable "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"; then
+if ! install_executable "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET" 2>/dev/null; then
   YTDLP_TARGET="$INSTALL_PREFIX/bin/yt-dlp"
   echo "Could not write to $INSTALL_PREFIX/lib; using $YTDLP_TARGET instead." >&2
   install_executable "$PACKAGE_DIR/yt-dlp" "$YTDLP_TARGET"
