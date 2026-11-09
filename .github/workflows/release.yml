@@ -74,7 +74,7 @@ jobs:
         run: scripts/verify-release-package.sh linux x86_64
 
       - name: Attest package and checksum
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
@@ -130,7 +130,7 @@ jobs:
         run: scripts/verify-release-package.sh linux arm64
 
       - name: Attest package and checksum
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
@@ -184,7 +184,7 @@ jobs:
           "${{ matrix.architecture }}"
 
       - name: Attest package and checksum
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
@@ -250,7 +250,7 @@ jobs:
         run: scripts/verify-appimage.sh "${{ matrix.architecture }}"
 
       - name: Attest AppImage and checksum
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/*.AppImage
@@ -356,7 +356,7 @@ jobs:
             "${{ matrix.architecture }}"
 
       - name: Attest Debian package and checksum
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/*.deb
@@ -488,7 +488,7 @@ jobs:
           fi
 
       - name: Attest aggregate checksum manifest
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: release-assets/SHA256SUMS
 
